@@ -1,22 +1,22 @@
 /**
- * pg_rrule-Compatible Wrappers for Pure PL/pgSQL RRULE Implementation
+ * RRULE Wrapper Functions for rrule_plpgsql
  *
- * This file provides wrappers around the DAVical RRULE functions to match
- * the pg_rrule C extension API. This allows us to use pure PL/pgSQL on
- * managed PostgreSQL services like Google Cloud AlloyDB that don't support
- * custom C extensions.
+ * This file provides wrapper functions around the DAVical RRULE base functions
+ * to create a simple, clean API for RRULE processing using pure PL/pgSQL.
  *
- * API Compatibility:
+ * API Functions:
  * - get_occurrences(rrule, dtstart) -> TIMESTAMP[]
+ * - get_occurrences(rrule, dtstart, until) -> TIMESTAMP[]
+ * - get_next_occurrence(rrule, dtstart, after) -> TIMESTAMP
  * - adjust_rrule_for_month_end(rrule_string) -> VARCHAR
- * - Uses naive TIMESTAMP (not TIMESTAMPTZ) for timezone-naive wall-clock times
  *
- * @package novel-2
+ * Uses naive TIMESTAMP (not TIMESTAMPTZ) for timezone-naive wall-clock times.
+ *
+ * @package rrule_plpgsql
  * @license MIT
  */
 
--- Create a custom 'rrule' type as a domain over VARCHAR for pg_rrule compatibility
--- Note: If pg_rrule extension is already installed, skip this (it provides its own rrule type)
+-- Create 'rrule' type as a domain over VARCHAR
 DO $$
 BEGIN
     -- Check if rrule type exists
@@ -45,9 +45,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 
--- Main pg_rrule-compatible function: get_occurrences()
+-- Main function: get_occurrences()
 --
--- Matches pg_rrule API: get_occurrences(rrule, dtstart) -> TIMESTAMP[]
+-- API: get_occurrences(rrule, dtstart) -> TIMESTAMP[]
 --
 -- Parameters:
 --   rrule_string: RRULE string (e.g., 'FREQ=DAILY;COUNT=10')
@@ -56,7 +56,7 @@ $$ LANGUAGE plpgsql IMMUTABLE;
 -- Returns: Array of naive TIMESTAMPs (TIMESTAMP[])
 --
 -- Implementation notes:
--- - Generates occurrences up to 10 years from dtstart (matching pg_rrule behavior)
+-- - Generates occurrences up to 10 years from dtstart
 -- - Returns up to 1000 occurrences by default
 -- - Uses naive TIMESTAMP throughout (no timezone conversion)
 CREATE OR REPLACE FUNCTION get_occurrences(

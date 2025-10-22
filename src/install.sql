@@ -1,8 +1,8 @@
 /**
- * Master Installation Script for Pure PL/pgSQL RRULE Implementation
+ * Master Installation Script for rrule_plpgsql
  *
- * This script installs all necessary functions to provide pg_rrule-compatible
- * RRULE processing using pure PL/pgSQL (no C extensions required).
+ * This script installs all necessary functions for RRULE processing
+ * using pure PL/pgSQL (no C extensions required).
  *
  * Installation:
  *   psql -d your_database -f install.sql
@@ -14,10 +14,10 @@
  *
  * Components installed:
  * 1. DAVical RRULE base functions (adapted from DAVical CalDAV server)
- * 2. pg_rrule-compatible wrapper functions
- * 3. Helper functions (adjust_rrule_for_month_end, get_next_occurrence)
+ * 2. RRULE wrapper functions (get_occurrences, adjust_rrule_for_month_end)
+ * 3. Helper functions (get_next_occurrence)
  *
- * @package novel-2 / pg_rrule_plpgsql
+ * @package rrule_plpgsql
  * @license MIT
  */
 
@@ -38,8 +38,8 @@ SET timezone = 'UTC';
 \i davical_rrule_base.sql
 
 \echo ''
-\echo 'Step 2/2: Installing pg_rrule-compatible wrappers...'
-\i pg_rrule_wrappers.sql
+\echo 'Step 2/2: Installing RRULE wrapper functions...'
+\i rrule_wrappers.sql
 
 \echo ''
 \echo '==================================================================='
