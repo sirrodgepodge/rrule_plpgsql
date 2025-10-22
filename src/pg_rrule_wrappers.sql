@@ -16,8 +16,15 @@
  */
 
 -- Create a custom 'rrule' type as a domain over VARCHAR for pg_rrule compatibility
-DROP DOMAIN IF EXISTS rrule CASCADE;
-CREATE DOMAIN rrule AS VARCHAR;
+-- Note: If pg_rrule extension is already installed, skip this (it provides its own rrule type)
+DO $$
+BEGIN
+    -- Check if rrule type exists
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'rrule') THEN
+        -- Create domain if type doesn't exist
+        EXECUTE 'CREATE DOMAIN rrule AS VARCHAR';
+    END IF;
+END $$;
 
 -- Helper function: Adjust RRULE for month-end handling
 -- Converts BYMONTHDAY=29,30,31 to BYMONTHDAY=-1 (last day of month)
