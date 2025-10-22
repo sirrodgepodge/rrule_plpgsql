@@ -84,7 +84,7 @@ psql -d your_database -f src/install.sql
 
 ```bash
 # In your main project root
-git submodule add https://your-gitlab.com/your-org/pg_rrule_plpgsql.git pg_rrule_plpgsql
+git submodule add https://github.com/sirrodgepodge/pg_rrule_plpgsql.git pg_rrule_plpgsql
 git submodule update --init --recursive
 
 # Install to database
@@ -422,12 +422,22 @@ SELECT unnest(get_occurrences(
 - [DAVical](https://gitlab.com/davical-project/davical) - Original RRULE implementation
 - [rrule.js](https://github.com/jakubroztocil/rrule) - JavaScript implementation
 
+## Contributing
+
+Contributions welcome! This is an open source project.
+
+1. Fork the repository: https://github.com/sirrodgepodge/pg_rrule_plpgsql
+2. Create a feature branch: `git checkout -b feature/my-feature`
+3. Add tests for new functionality
+4. Ensure all tests pass: `psql -f tests/test_rrule_functions.sql`
+5. Submit a pull request
+
 ## Support
 
 For issues, questions, or contributions:
-- **GitLab**: https://your-gitlab.com/your-org/pg_rrule_plpgsql/issues
-- **novel-2 integration**: See backend/src/utils/RRuleProcessor.ts
-- **Documentation**: This README and inline SQL comments
+- **GitHub Issues**: https://github.com/sirrodgepodge/pg_rrule_plpgsql/issues
+- **Pull Requests**: https://github.com/sirrodgepodge/pg_rrule_plpgsql/pulls
+- **Documentation**: This README, inline SQL comments, and `docs/` directory
 
 ---
 
