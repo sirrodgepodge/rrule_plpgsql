@@ -13,12 +13,12 @@
  * Dependencies: PostgreSQL 12+ (tested with PostgreSQL 16)
  *
  * Components installed:
- * 1. DAVical RRULE base functions (adapted from DAVical CalDAV server)
- * 2. RRULE wrapper functions (get_occurrences, adjust_rrule_for_month_end)
- * 3. Helper functions (get_next_occurrence)
+ * - Complete RRULE parser and generator (RFC 5545 compliant)
+ * - API functions (get_occurrences, get_next_occurrence, adjust_rrule_for_month_end)
  *
  * @package rrule_plpgsql
  * @license MIT
+ * @copyright 2025 Novel Platform
  */
 
 \set ON_ERROR_STOP on
@@ -34,12 +34,8 @@ BEGIN;
 -- Set timezone to UTC for consistent behavior
 SET timezone = 'UTC';
 
-\echo 'Step 1/2: Installing DAVical RRULE base functions...'
-\i davical_rrule_base.sql
-
-\echo ''
-\echo 'Step 2/2: Installing RRULE wrapper functions...'
-\i rrule_wrappers.sql
+\echo 'Installing RRULE functions...'
+\i rrule.sql
 
 \echo ''
 \echo '==================================================================='
