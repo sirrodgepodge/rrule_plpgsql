@@ -8,29 +8,25 @@ Testing, architecture, and contribution guidelines for rrule_plpgsql.
 
 ### Running the Test Suite
 
-Run the comprehensive test suite with 151 tests across 6 test suites:
+Run the comprehensive test suite with 168 tests across 10 test suites:
 
 ```bash
-# Core RRULE functionality tests (18 tests)
-psql -d test_database -f tests/test_rrule_functions.sql
+# Unit Tests (151 tests)
+psql -d test_database -f tests/test_rrule_functions.sql    # 18 tests - Core RRULE functionality
+psql -d test_database -f tests/test_tzid_support.sql       # 20 tests - TZID/Timezone support
+psql -d test_database -f tests/test_wkst_support.sql       # 22 tests - WKST/Week Start support
+psql -d test_database -f tests/test_skip_support.sql       # 15 tests - SKIP/Month-end handling
+psql -d test_database -f tests/test_rfc_compliance.sql     # 15 tests - RFC 5545 & RFC 7529 compliance
+psql -d test_database -f tests/test_validation.sql         # 61 tests - RFC 5545 validation rules
+psql -d test_database -f tests/test_bysetpos.sql           # BYSETPOS functionality
+psql -d test_database -f tests/test_optimizations.sql      # Performance optimizations
+psql -d test_database -f tests/test_tz_api.sql             # TIMESTAMPTZ API
 
-# TZID/Timezone support tests (20 tests)
-psql -d test_database -f tests/test_tzid_support.sql
-
-# WKST/Week Start support tests (22 tests)
-psql -d test_database -f tests/test_wkst_support.sql
-
-# SKIP/Month-end handling tests (15 tests)
-psql -d test_database -f tests/test_skip_support.sql
-
-# RFC 5545 & RFC 7529 compliance tests (15 tests)
-psql -d test_database -f tests/test_rfc_compliance.sql
-
-# RFC 5545 validation tests (61 tests)
-psql -d test_database -f tests/test_validation.sql
+# Integration Tests (17 tests)
+psql -d test_database -f tests/test_table_operations.sql   # 17 tests - Real-world table operations
 ```
 
-**Total Test Coverage:** 151 tests across 6 comprehensive test suites
+**Total Test Coverage:** 168 tests (151 unit + 17 integration) across 10 comprehensive test suites
 
 ---
 
@@ -138,14 +134,10 @@ psql -d test_database -f tests/test_validation.sql
    - Displays security warnings during installation
    - See [INCLUDING_SUBDAY_OPERATIONS.md](INCLUDING_SUBDAY_OPERATIONS.md)
 
-4. **test_*.sql** (6 test suites, 151 tests)
+4. **test_*.sql** (10 test suites, 168 tests)
    - Comprehensive test coverage
-   - Core RRULE functionality tests
-   - RFC 5545 & RFC 7529 compliance tests
-   - TZID/timezone support tests with DST handling
-   - SKIP parameter tests
-   - WKST support tests
-   - Validation tests
+   - Unit tests (151): Core RRULE functionality, RFC compliance, TZID/timezone support, SKIP/WKST/BYSETPOS, validation rules
+   - Integration tests (17): Real-world table operations (subscriptions, events, resources)
 
 ---
 
@@ -277,14 +269,14 @@ All RRULEs are validated **before** processing:
 
 ### Before Submitting
 
-1. **Run all tests** - Ensure 151/151 tests pass
+1. **Run all tests** - Ensure 168/168 tests pass (151 unit + 17 integration)
 2. **Add test coverage** - Include tests for new features
 3. **Document changes** - Update relevant .md files
 4. **Follow conventions** - Match existing code style
 
 ### Pull Request Checklist
 
-- [ ] All tests pass (151/151)
+- [ ] All tests pass (168/168)
 - [ ] New features have test coverage
 - [ ] Documentation updated (README.md, API_REFERENCE.md, etc.)
 - [ ] No breaking changes (or clearly documented if necessary)
@@ -379,7 +371,7 @@ SET client_min_messages TO DEBUG;
 ## Release Process
 
 1. **Version bump** - Update version in documentation
-2. **Run all tests** - Ensure 151/151 pass
+2. **Run all tests** - Ensure 168/168 pass
 3. **Update CHANGELOG** - Document changes
 4. **Tag release** - Git tag with version
 5. **Publish** - Push to GitHub
