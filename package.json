@@ -1,0 +1,51 @@
+{
+  "name": "rrule-plpgsql",
+  "version": "1.0.0",
+  "description": "Pure PL/pgSQL implementation of RFC 5545 RRULE for PostgreSQL - No C extensions, works everywhere",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "src/**/*.sql",
+    "tests/**/*.sql",
+    "index.js",
+    "index.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "echo 'Run: psql -d postgres -f tests/test_rrule_functions.sql && psql -d postgres -f tests/test_validation.sql'"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sirrodgepodge/rrule_plpgsql.git"
+  },
+  "keywords": [
+    "postgresql",
+    "postgres",
+    "plpgsql",
+    "rrule",
+    "rfc5545",
+    "rfc7529",
+    "recurrence",
+    "recurring",
+    "calendar",
+    "icalendar",
+    "timezone",
+    "validation",
+    "typeorm",
+    "prisma",
+    "knex",
+    "sequelize",
+    "pg"
+  ],
+  "author": "Roger Beaman",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/sirrodgepodge/rrule_plpgsql/issues"
+  },
+  "homepage": "https://github.com/sirrodgepodge/rrule_plpgsql#readme",
+  "engines": {
+    "node": ">=12.0.0"
+  },
+  "dependencies": {}
+}

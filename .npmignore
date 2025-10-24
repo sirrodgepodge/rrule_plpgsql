@@ -1,0 +1,25 @@
+# Git and GitHub
+.git/
+.github/
+.gitignore
+.gitmodules
+
+# Node modules
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Documentation that's not needed in package
+NPM_PACKAGE_REFERENCE.md
+RFC_GAPS_ANALYSIS.md
+
+# Keep these files (they will be included):
+# src/
+# tests/
+# README.md
+# LICENSE
+# index.js
+# index.d.ts
+# package.json
