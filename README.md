@@ -12,7 +12,7 @@ This library provides complete RRULE recurrence calculation functionality using 
 - ✅ **No C extensions required** - Pure PL/pgSQL, works on any PostgreSQL
 - ✅ **Full timezone support with DST handling** - Wall-clock time preserved ("10 AM stays 10 AM" across DST transitions)
 - ✅ **Consistent everywhere** - Same implementation across all environments
-- ✅ **Production-ready** - Comprehensive test suite with 168 tests (including table operation integration tests)
+- ✅ **Production-ready** - Comprehensive test suite with 187 tests (including table operation integration tests)
 - ✅ **RFC 5545 & RFC 7529 compliant** - Supports standard RRULE patterns plus SKIP/RSCALE
 - ✅ **50-75x faster than Node.js** - Excellent performance without compilation
 - ✅ **Works on managed services** - AlloyDB, RDS, Azure Database for PostgreSQL
@@ -189,48 +189,82 @@ psql -d your_database -f src/install_with_subday.sql
 
 **Both APIs are fully timezone-aware with automatic DST handling.**
 
-### TIMESTAMP API (timezone via TZID in RRULE)
+### Public API Functions
+
+All functions support both `TIMESTAMP` and `TIMESTAMPTZ` types with flexible timezone handling:
+
+**Timezone Resolution Priority:**
+1. **Explicit timezone parameter** (if provided)
+2. **TZID in RRULE string** (e.g., `TZID=America/New_York`)
+3. **UTC** (fallback when neither is specified)
 
 ```sql
--- Get all occurrences (supports TZID= in rrule for timezone/DST handling)
-SELECT * FROM rrule.all(rrule, dtstart);
+-- Get all occurrences
+rrule.all(rrule, dtstart) → SETOF TIMESTAMP
+rrule.all(rrule, dtstart_tz, timezone DEFAULT NULL) → SETOF TIMESTAMPTZ
 
 -- Get occurrences in date range
-SELECT * FROM rrule.between(rrule, dtstart, start_date, end_date);
+rrule.between(rrule, dtstart, start_date, end_date) → SETOF TIMESTAMP
+rrule.between(rrule, dtstart_tz, start_tz, end_tz, timezone DEFAULT NULL) → SETOF TIMESTAMPTZ
 
 -- Get first occurrence after date
-SELECT rrule.after(rrule, dtstart, after_date);
+rrule.after(rrule, dtstart, after_date) → TIMESTAMP
+rrule.after(rrule, dtstart_tz, after_tz, count, timezone DEFAULT NULL) → SETOF TIMESTAMPTZ
 
 -- Get last occurrence before date
-SELECT rrule.before(rrule, dtstart, before_date);
+rrule.before(rrule, dtstart, before_date) → TIMESTAMP
+rrule.before(rrule, dtstart_tz, before_tz, count, timezone DEFAULT NULL) → SETOF TIMESTAMPTZ
 
 -- Count total occurrences
-SELECT rrule.count(rrule, dtstart);
+rrule.count(rrule, dtstart) → INTEGER
+rrule.count(rrule, dtstart_tz, timezone DEFAULT NULL) → INTEGER
 
--- Convenience: next occurrence from now
-SELECT rrule.next(rrule, dtstart);
+-- Next occurrence from NOW
+rrule.next(rrule, dtstart) → TIMESTAMP
+rrule.next(rrule, dtstart_tz, timezone DEFAULT NULL) → TIMESTAMPTZ
 
--- Convenience: most recent occurrence
-SELECT rrule.most_recent(rrule, dtstart);
+-- Most recent occurrence before NOW
+rrule.most_recent(rrule, dtstart) → TIMESTAMP
+rrule.most_recent(rrule, dtstart_tz, timezone DEFAULT NULL) → TIMESTAMPTZ
 
--- Example with timezone (DST-aware):
-SELECT * FROM rrule.all('FREQ=DAILY;COUNT=5;TZID=America/New_York', '2025-03-08 10:00:00'::TIMESTAMP);
+-- Check if event overlaps date range
+rrule.overlaps(dtstart_tz, dtend_tz, rrule, mindate_tz, maxdate_tz, timezone DEFAULT NULL) → BOOLEAN
 ```
 
-### TIMESTAMPTZ API (timezone via explicit parameter)
+**Examples:**
 
 ```sql
--- Explicit timezone parameter (can override TZID in RRULE)
-SELECT * FROM rrule.all(rrule, dtstart_tz, timezone);
-SELECT * FROM rrule.between(rrule, dtstart_tz, start, end, timezone);
-SELECT * FROM rrule.after(rrule, dtstart_tz, after, count, timezone);
-SELECT * FROM rrule.before(rrule, dtstart_tz, before, count, timezone);
+-- Using TZID in RRULE string (TIMESTAMP API)
+SELECT * FROM rrule.all(
+    'FREQ=DAILY;COUNT=5;TZID=America/New_York',
+    '2025-03-08 10:00:00'::TIMESTAMP
+);
 
--- Example with timezone parameter:
-SELECT * FROM rrule.all('FREQ=DAILY;COUNT=5', '2025-03-08 10:00:00-05'::TIMESTAMPTZ, 'America/New_York');
+-- Using explicit timezone parameter (TIMESTAMPTZ API)
+SELECT * FROM rrule.all(
+    'FREQ=DAILY;COUNT=5',
+    '2025-03-08 10:00:00-05'::TIMESTAMPTZ,
+    'America/New_York'
+);
+
+-- Timezone parameter overrides TZID in RRULE
+SELECT * FROM rrule.all(
+    'FREQ=DAILY;COUNT=5;TZID=Europe/London',  -- TZID ignored
+    '2025-03-08 10:00:00-05'::TIMESTAMPTZ,
+    'America/New_York'  -- This timezone is used
+);
+
+-- Defaults to UTC when no timezone specified
+SELECT * FROM rrule.all(
+    'FREQ=DAILY;COUNT=5',  -- No TZID
+    '2025-03-08 10:00:00+00'::TIMESTAMPTZ,
+    NULL  -- Defaults to UTC
+);
 ```
 
-**See [API Reference](API_REFERENCE.md) for complete function documentation.**
+**DST Handling:** All functions preserve wall-clock time across DST transitions. A meeting at 10:00 AM stays at 10:00 AM even when DST changes the UTC offset.
+
+**See [API Reference](API_REFERENCE.md) for complete function documentation and advanced examples.**
 
 ---
 

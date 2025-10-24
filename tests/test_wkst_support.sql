@@ -451,22 +451,72 @@ VALUES ('WEEKLY with WKST=SA (Saturday)',
 
 \echo ''
 \echo '==================================================================='
-\echo 'TEST GROUP 6: Complex patterns with WKST'
+\echo 'TEST GROUP 6: Complex patterns with WKST + DST boundaries'
 \echo '==================================================================='
 
--- NOTE: Complex tests with BYDAY across DST boundaries commented out
--- These tests work correctly but have 1-hour time offsets due to DST transitions
--- The core WKST logic is verified by tests 1-20
+-- Test 21: WEEKLY + WKST crossing DST boundary (March 9, 2025)
+-- Wall-clock time should stay 10:00 AM throughout
+INSERT INTO wkst_test_results (test_name, status)
+VALUES ('WEEKLY + WKST=SU crossing DST (preserves wall-clock)',
+    assert_occurrences_equal(
+        'WEEKLY WKST=SU DST crossing',
+        ARRAY[
+            '2025-03-01 10:00:00'::TIMESTAMP,  -- Before DST (EST)
+            '2025-03-08 10:00:00'::TIMESTAMP,  -- Before DST (EST)
+            '2025-03-15 10:00:00'::TIMESTAMP,  -- After DST (EDT) - wall-clock preserved
+            '2025-03-22 10:00:00'::TIMESTAMP,  -- After DST (EDT)
+            '2025-03-29 10:00:00'::TIMESTAMP   -- After DST (EDT)
+        ],
+        (SELECT array_agg(occurrence) FROM "all"(
+            'FREQ=WEEKLY;BYDAY=SA;WKST=SU;COUNT=5;TZID=America/New_York',
+            '2025-03-01 10:00:00'::TIMESTAMP
+        ) AS occurrence
+    )
+));
 
-\echo 'Tests 21-23: Skipped (DST time offset issues in test data)'
-\echo 'Core WKST functionality validated by tests 1-20'
+-- Test 22: WEEKLY + WKST + BYDAY with multiple weekdays crossing DST
+INSERT INTO wkst_test_results (test_name, status)
+VALUES ('WEEKLY + WKST + BYDAY crossing DST',
+    assert_occurrences_equal(
+        'WEEKLY WKST MO,WE DST',
+        ARRAY[
+            '2025-03-03 14:00:00'::TIMESTAMP,  -- Mon before DST
+            '2025-03-05 14:00:00'::TIMESTAMP,  -- Wed before DST
+            '2025-03-10 14:00:00'::TIMESTAMP,  -- Mon after DST - wall-clock preserved
+            '2025-03-12 14:00:00'::TIMESTAMP,  -- Wed after DST
+            '2025-03-17 14:00:00'::TIMESTAMP,  -- Mon after DST
+            '2025-03-19 14:00:00'::TIMESTAMP   -- Wed after DST
+        ],
+        (SELECT array_agg(occurrence) FROM "all"(
+            'FREQ=WEEKLY;BYDAY=MO,WE;WKST=MO;COUNT=6;TZID=America/New_York',
+            '2025-03-03 14:00:00'::TIMESTAMP
+        ) AS occurrence
+    )
+));
+
+-- Test 23: WKST with INTERVAL crossing DST
+INSERT INTO wkst_test_results (test_name, status)
+VALUES ('WEEKLY + INTERVAL + WKST crossing DST',
+    assert_occurrences_equal(
+        'WEEKLY INTERVAL=2 WKST DST',
+        ARRAY[
+            '2025-03-04 09:00:00'::TIMESTAMP,  -- Tue before DST
+            '2025-03-18 09:00:00'::TIMESTAMP,  -- 2 weeks later, after DST
+            '2025-04-01 09:00:00'::TIMESTAMP   -- 2 weeks later, after DST
+        ],
+        (SELECT array_agg(occurrence) FROM "all"(
+            'FREQ=WEEKLY;INTERVAL=2;WKST=TU;COUNT=3;TZID=America/New_York',
+            '2025-03-04 09:00:00'::TIMESTAMP
+        ) AS occurrence
+    )
+));
 
 \echo ''
 \echo '==================================================================='
 \echo 'TEST GROUP 7: Edge cases and regression tests'
 \echo '==================================================================='
 
--- Test 21: Missing WKST defaults to MO
+-- Test 24: Missing WKST defaults to MO
 INSERT INTO wkst_test_results (test_name, status)
 VALUES ('WEEKLY without WKST (defaults to MO)',
     assert_occurrences_equal(
@@ -480,11 +530,7 @@ VALUES ('WEEKLY without WKST (defaults to MO)',
             '2025-01-20 10:00:00'::TIMESTAMP
         ) AS occurrence
     )
-);
-
-\echo ''
-\echo 'Tests 22-24: Skipped (DST-related test data issues)'
-\echo 'Core WK ST week numbering and boundary logic validated by tests 1-21'
+));
 
 \echo ''
 \echo '==================================================================='

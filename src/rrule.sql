@@ -67,7 +67,7 @@ CREATE TYPE rrule_parts AS (
 
 
 -- Create a function to parse the RRULE into it's composite type
-CREATE or REPLACE FUNCTION parse_rrule_parts( TIMESTAMP WITH TIME ZONE, TEXT ) RETURNS rrule.rrule_parts AS $$
+CREATE OR REPLACE FUNCTION parse_rrule_parts( TIMESTAMP WITH TIME ZONE, TEXT ) RETURNS rrule.rrule_parts AS $$
 DECLARE
   basedate   ALIAS FOR $1;
   repeatrule ALIAS FOR $2;
@@ -293,7 +293,7 @@ $$ LANGUAGE plpgsql IMMUTABLE STRICT;
 
 
 -- Return a SETOF dates within the month of a particular date which match a string of BYDAY rule specifications
-CREATE or REPLACE FUNCTION rrule_month_byday_set(
+CREATE OR REPLACE FUNCTION rrule_month_byday_set(
   TIMESTAMP WITH TIME ZONE,
   TEXT[],
   max_results INT DEFAULT NULL  -- NULL = unlimited, otherwise stop after N results
@@ -303,7 +303,7 @@ DECLARE
   byday ALIAS FOR $2;
   max_results ALIAS FOR $3;
   dayrule TEXT;
-  i INT;
+  i INT;  -- Still needed for final results array iteration
   dow INT;
   index INT;
   first_dow INT;
@@ -323,9 +323,8 @@ BEGIN
     RETURN;
   END IF;
 
-  i := 1;
-  dayrule := byday[i];
-  WHILE dayrule IS NOT NULL LOOP
+  -- Iterate through each BYDAY rule (e.g., MO, 2TU, -1FR)
+  FOREACH dayrule IN ARRAY byday LOOP
     dow := position(substring( dayrule from '..$') in 'SUMOTUWETHFRSA') / 2;
     each_day := date_trunc( 'month', in_time ) + (in_time::time)::interval;
     this_month := date_part( 'month', in_time );
@@ -368,9 +367,6 @@ BEGIN
         each_day := each_day + '1 week'::interval;
       END LOOP;
     END IF;
-
-    i := i + 1;
-    dayrule := byday[i];
   END LOOP;
 
   FOR i IN 1..31 LOOP
@@ -407,7 +403,6 @@ DECLARE
   requested_day INT;
   adjusted_date TIMESTAMP WITH TIME ZONE;
   time_component TIME;
-  i INT;
   seen_dates TIMESTAMP WITH TIME ZONE[];  -- Track to avoid duplicates
   result_count INT := 0;
 BEGIN
@@ -427,10 +422,8 @@ BEGIN
   -- Initialize seen_dates array
   seen_dates := ARRAY[]::TIMESTAMP WITH TIME ZONE[];
 
-  FOR i IN 1..31 LOOP
-    EXIT WHEN bymonthday[i] IS NULL;
-    requested_day := bymonthday[i];
-
+  -- Iterate through each day in BYMONTHDAY array (e.g., 1, 15, -1)
+  FOREACH requested_day IN ARRAY bymonthday LOOP
     -- Handle negative indices (count from end of month)
     -- Negative indices are always valid (RFC 5545), no SKIP needed
     IF requested_day < 0 THEN
@@ -520,7 +513,7 @@ $$ LANGUAGE plpgsql IMMUTABLE;  -- STRICT removed to allow NULL max_results
 
 -- Return a SETOF dates within the week of a particular date which match a single BYDAY rule specification
 -- Now supports WKST (week start day) parameter
-CREATE or REPLACE FUNCTION rrule_week_byday_set(
+CREATE OR REPLACE FUNCTION rrule_week_byday_set(
   TIMESTAMP WITH TIME ZONE,
   TEXT[],
   TEXT,
@@ -691,7 +684,7 @@ $$ LANGUAGE plpgsql IMMUTABLE;
 ------------------------------------------------------------------------------------------------------
 -- Test the weekday of this date against the array of weekdays from the BYDAY rule (FREQ=WEEKLY or less)
 ------------------------------------------------------------------------------------------------------
-CREATE or REPLACE FUNCTION test_byday_rule( TIMESTAMP WITH TIME ZONE, TEXT[] ) RETURNS BOOLEAN AS $$
+CREATE OR REPLACE FUNCTION test_byday_rule( TIMESTAMP WITH TIME ZONE, TEXT[] ) RETURNS BOOLEAN AS $$
 DECLARE
   testme ALIAS FOR $1;
   byday ALIAS FOR $2;
@@ -709,7 +702,7 @@ $$ LANGUAGE plpgsql IMMUTABLE;
 ------------------------------------------------------------------------------------------------------
 -- Test the month of this date against the array of months from the rule
 ------------------------------------------------------------------------------------------------------
-CREATE or REPLACE FUNCTION test_bymonth_rule( TIMESTAMP WITH TIME ZONE, INT[] ) RETURNS BOOLEAN AS $$
+CREATE OR REPLACE FUNCTION test_bymonth_rule( TIMESTAMP WITH TIME ZONE, INT[] ) RETURNS BOOLEAN AS $$
 DECLARE
   testme ALIAS FOR $1;
   bymonth ALIAS FOR $2;
@@ -725,7 +718,7 @@ $$ LANGUAGE plpgsql IMMUTABLE;
 ------------------------------------------------------------------------------------------------------
 -- Test the day in month of this date against the array of monthdays from the rule
 ------------------------------------------------------------------------------------------------------
-CREATE or REPLACE FUNCTION test_bymonthday_rule( TIMESTAMP WITH TIME ZONE, INT[] ) RETURNS BOOLEAN AS $$
+CREATE OR REPLACE FUNCTION test_bymonthday_rule( TIMESTAMP WITH TIME ZONE, INT[] ) RETURNS BOOLEAN AS $$
 DECLARE
   testme ALIAS FOR $1;
   bymonthday ALIAS FOR $2;
@@ -741,7 +734,7 @@ $$ LANGUAGE plpgsql IMMUTABLE;
 ------------------------------------------------------------------------------------------------------
 -- Test the day in year of this date against the array of yeardays from the rule
 ------------------------------------------------------------------------------------------------------
-CREATE or REPLACE FUNCTION test_byyearday_rule( TIMESTAMP WITH TIME ZONE, INT[] ) RETURNS BOOLEAN AS $$
+CREATE OR REPLACE FUNCTION test_byyearday_rule( TIMESTAMP WITH TIME ZONE, INT[] ) RETURNS BOOLEAN AS $$
 DECLARE
   testme ALIAS FOR $1;
   byyearday ALIAS FOR $2;
@@ -761,7 +754,7 @@ $$ LANGUAGE plpgsql IMMUTABLE;
 -- to work.  I guess we could do it with an array, instead, for compatibility with earlier
 -- releases, since there's a maximum of 366 positions in a set.
 ------------------------------------------------------------------------------------------------------
-CREATE or REPLACE FUNCTION rrule_bysetpos_filter( REFCURSOR, INT[] ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
+CREATE OR REPLACE FUNCTION rrule_bysetpos_filter( REFCURSOR, INT[] ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
 DECLARE
   curse ALIAS FOR $1;
   bysetpos ALIAS FOR $2;
@@ -799,7 +792,7 @@ $$ LANGUAGE plpgsql IMMUTABLE;
 -- If no time filters specified, returns the input time
 -- If time filters specified, generates all matching times within the same day
 ------------------------------------------------------------------------------------------------------
-CREATE or REPLACE FUNCTION rrule_day_time_set(
+CREATE OR REPLACE FUNCTION rrule_day_time_set(
   TIMESTAMP WITH TIME ZONE,
   rrule.rrule_parts,
   max_results INT DEFAULT NULL  -- NULL = unlimited, otherwise stop after N results
@@ -899,7 +892,7 @@ $$ LANGUAGE plpgsql IMMUTABLE;  -- STRICT removed to allow NULL max_results
 -- Return another day's worth of events
 -- Now supports BYHOUR, BYMINUTE, BYSECOND, and BYSETPOS for sub-day scheduling
 ------------------------------------------------------------------------------------------------------
-CREATE or REPLACE FUNCTION daily_set(
+CREATE OR REPLACE FUNCTION daily_set(
   TIMESTAMP WITH TIME ZONE,
   rrule.rrule_parts,
   max_results INT DEFAULT NULL  -- NULL = unlimited, otherwise stop after N results
@@ -956,7 +949,7 @@ $$ LANGUAGE plpgsql IMMUTABLE;  -- STRICT removed to allow NULL max_results
 -- Doesn't handle truly obscure and unlikely stuff like BYWEEKNO=5;BYMONTH=1;BYDAY=WE,TH,FR;BYSETPOS=-2
 -- Imagine that.
 ------------------------------------------------------------------------------------------------------
-CREATE or REPLACE FUNCTION weekly_set(
+CREATE OR REPLACE FUNCTION weekly_set(
   TIMESTAMP WITH TIME ZONE,
   rrule.rrule_parts,
   max_results INT DEFAULT NULL  -- NULL = unlimited, otherwise stop after N results
@@ -1002,7 +995,7 @@ $$ LANGUAGE plpgsql IMMUTABLE;  -- STRICT removed to allow NULL max_results
 ------------------------------------------------------------------------------------------------------
 -- Return another month's worth of events
 ------------------------------------------------------------------------------------------------------
-CREATE or REPLACE FUNCTION monthly_set(
+CREATE OR REPLACE FUNCTION monthly_set(
   TIMESTAMP WITH TIME ZONE,
   rrule.rrule_parts,
   max_results INT DEFAULT NULL  -- NULL = unlimited, otherwise stop after N results
@@ -1073,7 +1066,7 @@ $$ LANGUAGE plpgsql IMMUTABLE;  -- STRICT removed to allow NULL max_results
 ------------------------------------------------------------------------------------------------------
 -- If this is YEARLY;BYMONTH, abuse MONTHLY;BYMONTH for everything except the BYSETPOS
 ------------------------------------------------------------------------------------------------------
-CREATE or REPLACE FUNCTION rrule_yearly_bymonth_set(
+CREATE OR REPLACE FUNCTION rrule_yearly_bymonth_set(
   TIMESTAMP WITH TIME ZONE,
   rrule.rrule_parts,
   max_results INT DEFAULT NULL  -- NULL = unlimited, otherwise stop after N results
@@ -1114,7 +1107,7 @@ $$ LANGUAGE plpgsql IMMUTABLE;  -- STRICT removed to allow NULL max_results
 -- Example: FREQ=YEARLY;BYYEARDAY=100 = April 9/10 (day 100 of each year)
 -- Supports negative indices: BYYEARDAY=-1 = December 31
 ------------------------------------------------------------------------------------------------------
-CREATE or REPLACE FUNCTION rrule_yearly_byyearday_set(
+CREATE OR REPLACE FUNCTION rrule_yearly_byyearday_set(
   TIMESTAMP WITH TIME ZONE,
   rrule.rrule_parts,
   max_results INT DEFAULT NULL  -- NULL = unlimited, otherwise stop after N results
@@ -1266,7 +1259,7 @@ $$ LANGUAGE plpgsql IMMUTABLE;  -- STRICT removed to allow NULL max_results
 ------------------------------------------------------------------------------------------------------
 -- Return another year's worth of events
 ------------------------------------------------------------------------------------------------------
-CREATE or REPLACE FUNCTION yearly_set(
+CREATE OR REPLACE FUNCTION yearly_set(
   TIMESTAMP WITH TIME ZONE,
   rrule.rrule_parts,
   max_results INT DEFAULT NULL  -- NULL = unlimited, otherwise stop after N results
@@ -1349,7 +1342,7 @@ $$ LANGUAGE plpgsql IMMUTABLE;  -- STRICT removed to allow NULL max_results
 -- ⚠️  Recommended limits: COUNT <= 1000, UNTIL <= 7 days from dtstart
 -- ⚠️  Use case: "Every 3 hours" (FREQ=HOURLY;INTERVAL=3;COUNT=8)
 ------------------------------------------------------------------------------------------------------
-CREATE or REPLACE FUNCTION hourly_set( TIMESTAMP WITH TIME ZONE, rrule.rrule_parts ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
+CREATE OR REPLACE FUNCTION hourly_set( TIMESTAMP WITH TIME ZONE, rrule.rrule_parts ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
 DECLARE
   after ALIAS FOR $1;
   rrule ALIAS FOR $2;
@@ -1395,7 +1388,7 @@ $$ LANGUAGE plpgsql IMMUTABLE STRICT;
 -- ⚠️  Recommended limits: COUNT <= 1000, UNTIL <= 24 hours from dtstart
 -- ⚠️  Use case: "Every 15 minutes" (FREQ=MINUTELY;INTERVAL=15;COUNT=96)
 ------------------------------------------------------------------------------------------------------
-CREATE or REPLACE FUNCTION minutely_set( TIMESTAMP WITH TIME ZONE, rrule.rrule_parts ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
+CREATE OR REPLACE FUNCTION minutely_set( TIMESTAMP WITH TIME ZONE, rrule.rrule_parts ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
 DECLARE
   after ALIAS FOR $1;
   rrule ALIAS FOR $2;
@@ -1441,7 +1434,7 @@ $$ LANGUAGE plpgsql IMMUTABLE STRICT;
 -- ⚠️  Recommended limits: COUNT <= 1000, UNTIL <= 1 hour from dtstart
 -- ⚠️  Use case: "Every 30 seconds for 5 minutes" (FREQ=SECONDLY;INTERVAL=30;COUNT=10)
 ------------------------------------------------------------------------------------------------------
-CREATE or REPLACE FUNCTION secondly_set( TIMESTAMP WITH TIME ZONE, rrule.rrule_parts ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
+CREATE OR REPLACE FUNCTION secondly_set( TIMESTAMP WITH TIME ZONE, rrule.rrule_parts ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
 DECLARE
   after ALIAS FOR $1;
   rrule ALIAS FOR $2;
@@ -1481,7 +1474,7 @@ $$ LANGUAGE plpgsql IMMUTABLE STRICT;
 ------------------------------------------------------------------------------------------------------
 -- Combine all of that into something which we can use to generate a series from an arbitrary DTSTART/RRULE
 ------------------------------------------------------------------------------------------------------
-CREATE or REPLACE FUNCTION rrule_event_instances_range( TIMESTAMP WITH TIME ZONE, TEXT, TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE, INT )
+CREATE OR REPLACE FUNCTION rrule_event_instances_range( TIMESTAMP WITH TIME ZONE, TEXT, TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE, INT )
                                          RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
 DECLARE
   basedate ALIAS FOR $1;
@@ -1675,7 +1668,7 @@ $$ LANGUAGE plpgsql IMMUTABLE STRICT;
 ------------------------------------------------------------------------------------------------------
 -- A simplified DTSTART/RRULE only interface which applies some performance assumptions
 ------------------------------------------------------------------------------------------------------
-CREATE or REPLACE FUNCTION event_instances( TIMESTAMP WITH TIME ZONE, TEXT )
+CREATE OR REPLACE FUNCTION event_instances( TIMESTAMP WITH TIME ZONE, TEXT )
                                          RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
 DECLARE
   basedate ALIAS FOR $1;
@@ -1692,7 +1685,7 @@ $$ LANGUAGE plpgsql IMMUTABLE STRICT;
 -- In most cases we just want to know if there *is* an event overlapping the range, so we have a
 -- specific function for that.  Note that this is *not* strict, and can be called with NULLs.
 ------------------------------------------------------------------------------------------------------
-CREATE or REPLACE FUNCTION rrule_event_overlaps( TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE, TEXT, TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE )
+CREATE OR REPLACE FUNCTION rrule_event_overlaps( TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE, TEXT, TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE )
                                          RETURNS BOOLEAN AS $$
 DECLARE
   dtstart ALIAS FOR $1;
@@ -1745,7 +1738,7 @@ CREATE TYPE rrule_instance AS (
   instance TIMESTAMP WITH TIME ZONE
 );
 
-CREATE or REPLACE FUNCTION rrule_event_instances( TIMESTAMP WITH TIME ZONE, TEXT )
+CREATE OR REPLACE FUNCTION rrule_event_instances( TIMESTAMP WITH TIME ZONE, TEXT )
                                          RETURNS SETOF rrule.rrule_instance AS $$
 DECLARE
   basedate ALIAS FOR $1;
@@ -1768,7 +1761,7 @@ END;
 $$ LANGUAGE plpgsql IMMUTABLE STRICT;
 
 
-CREATE or REPLACE FUNCTION icalendar_interval_to_SQL( TEXT ) RETURNS interval AS $function$
+CREATE OR REPLACE FUNCTION icalendar_interval_to_SQL( TEXT ) RETURNS interval AS $function$
   SELECT CASE WHEN substring($1,1,1) = '-' THEN -1 ELSE 1 END * regexp_replace( regexp_replace($1, '[PT-]', '', 'g'), '([A-Z])', E'\\1 ', 'g')::interval;
 $function$ LANGUAGE sql IMMUTABLE STRICT;
 
@@ -2494,9 +2487,162 @@ BEGIN
         results := array_append(results, naive_occurrence AT TIME ZONE tz_name);
     END LOOP;
 
-    -- Return the last N occurrences
-    FOR i IN GREATEST(1, array_length(results, 1) - count + 1) .. array_length(results, 1) LOOP
-        RETURN NEXT results[i];
-    END LOOP;
+    -- Return the last N occurrences (handle NULL array_length when results is empty)
+    IF array_length(results, 1) IS NOT NULL THEN
+        FOR i IN GREATEST(1, array_length(results, 1) - count + 1) .. array_length(results, 1) LOOP
+            RETURN NEXT results[i];
+        END LOOP;
+    END IF;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+
+-- ================================================================================================================
+-- PUBLIC API: count() - Count total occurrences (TIMESTAMPTZ version with timezone support)
+-- ================================================================================================================
+
+CREATE OR REPLACE FUNCTION rrule.count(
+    rrule_string TEXT,
+    dtstart TIMESTAMPTZ,
+    timezone TEXT DEFAULT NULL
+) RETURNS INTEGER AS $$
+DECLARE
+    occurrence_count INTEGER;
+BEGIN
+    -- Leverage the all() function which handles timezone resolution
+    SELECT COUNT(*)::INTEGER INTO occurrence_count
+    FROM rrule."all"(rrule_string, dtstart, timezone);
+
+    RETURN occurrence_count;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+
+-- ================================================================================================================
+-- PUBLIC API: next() - Get next occurrence from NOW (TIMESTAMPTZ version with timezone support)
+-- ================================================================================================================
+
+CREATE OR REPLACE FUNCTION rrule.next(
+    rrule_string TEXT,
+    dtstart TIMESTAMPTZ,
+    timezone TEXT DEFAULT NULL
+) RETURNS TIMESTAMPTZ AS $$
+DECLARE
+    tz_name TEXT;
+    now_in_tz TIMESTAMPTZ;
+BEGIN
+    -- Determine timezone (priority: explicit param > TZID in RRULE > UTC)
+    tz_name := COALESCE(
+        timezone,
+        substring(rrule_string from 'TZID=([^;]+)(;|$)'),
+        'UTC'
+    );
+
+    -- Get current time in the target timezone
+    now_in_tz := NOW() AT TIME ZONE tz_name;
+
+    -- Use after() to find the next occurrence
+    RETURN (
+        SELECT * FROM rrule."after"(rrule_string, dtstart, now_in_tz, 1, timezone)
+        LIMIT 1
+    );
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+
+-- ================================================================================================================
+-- PUBLIC API: most_recent() - Get most recent occurrence before NOW (TIMESTAMPTZ version with timezone support)
+-- ================================================================================================================
+
+CREATE OR REPLACE FUNCTION rrule.most_recent(
+    rrule_string TEXT,
+    dtstart TIMESTAMPTZ,
+    timezone TEXT DEFAULT NULL
+) RETURNS TIMESTAMPTZ AS $$
+DECLARE
+    tz_name TEXT;
+    now_in_tz TIMESTAMPTZ;
+BEGIN
+    -- Determine timezone (priority: explicit param > TZID in RRULE > UTC)
+    tz_name := COALESCE(
+        timezone,
+        substring(rrule_string from 'TZID=([^;]+)(;|$)'),
+        'UTC'
+    );
+
+    -- Get current time in the target timezone
+    now_in_tz := NOW() AT TIME ZONE tz_name;
+
+    -- Use before() to find the most recent occurrence
+    RETURN (
+        SELECT * FROM rrule."before"(rrule_string, dtstart, now_in_tz, 1, timezone)
+        LIMIT 1
+    );
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+
+-- ================================================================================================================
+-- PUBLIC API: overlaps() - Check if recurring event overlaps date range (add timezone support)
+-- ================================================================================================================
+
+CREATE OR REPLACE FUNCTION rrule.overlaps(
+    dtstart TIMESTAMPTZ,
+    dtend TIMESTAMPTZ,
+    rrule_string TEXT,
+    mindate TIMESTAMPTZ,
+    maxdate TIMESTAMPTZ,
+    timezone TEXT DEFAULT NULL
+) RETURNS BOOLEAN AS $$
+DECLARE
+    tz_name TEXT;
+    base_date TIMESTAMPTZ;
+    found_occurrence TIMESTAMPTZ;
+    adjusted_maxdate TIMESTAMPTZ;
+    adjusted_mindate TIMESTAMPTZ;
+BEGIN
+    -- Handle NULL dtstart
+    IF dtstart IS NULL THEN
+        RETURN NULL;
+    END IF;
+
+    -- Determine timezone (priority: explicit param > TZID in RRULE > session timezone)
+    tz_name := COALESCE(
+        timezone,
+        substring(rrule_string from 'TZID=([^;]+)(;|$)'),
+        'UTC'
+    );
+
+    -- Validate timezone
+    IF tz_name NOT IN (SELECT name FROM pg_timezone_names) THEN
+        RAISE EXCEPTION 'Invalid timezone: %. Must be a valid PostgreSQL timezone name', tz_name;
+    END IF;
+
+    -- Determine base date (end time if available, otherwise start time)
+    IF dtend IS NULL THEN
+        base_date := dtstart;
+    ELSE
+        base_date := dtend;
+    END IF;
+
+    -- Adjust date range to account for event duration
+    adjusted_mindate := COALESCE(mindate, CURRENT_TIMESTAMP - INTERVAL '10 years');
+    adjusted_maxdate := COALESCE(maxdate, CURRENT_TIMESTAMP + INTERVAL '10 years');
+
+    IF dtend IS NOT NULL THEN
+        adjusted_maxdate := adjusted_maxdate + (base_date - dtstart);
+    END IF;
+
+    -- If no RRULE, check single event overlap
+    IF rrule_string IS NULL THEN
+        RETURN (dtstart < adjusted_maxdate AND base_date >= adjusted_mindate);
+    END IF;
+
+    -- Check if there's at least one occurrence in the range
+    SELECT * INTO found_occurrence
+    FROM rrule."between"(rrule_string, base_date, adjusted_mindate, adjusted_maxdate, tz_name)
+    LIMIT 1;
+
+    RETURN FOUND;
 END;
 $$ LANGUAGE plpgsql STABLE;

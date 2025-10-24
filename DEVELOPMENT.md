@@ -8,25 +8,26 @@ Testing, architecture, and contribution guidelines for rrule_plpgsql.
 
 ### Running the Test Suite
 
-Run the comprehensive test suite with 168 tests across 10 test suites:
+Run the comprehensive test suite with 187 tests across 11 test suites:
 
 ```bash
-# Unit Tests (151 tests)
-psql -d test_database -f tests/test_rrule_functions.sql    # 18 tests - Core RRULE functionality
-psql -d test_database -f tests/test_tzid_support.sql       # 20 tests - TZID/Timezone support
-psql -d test_database -f tests/test_wkst_support.sql       # 22 tests - WKST/Week Start support
-psql -d test_database -f tests/test_skip_support.sql       # 15 tests - SKIP/Month-end handling
-psql -d test_database -f tests/test_rfc_compliance.sql     # 15 tests - RFC 5545 & RFC 7529 compliance
-psql -d test_database -f tests/test_validation.sql         # 61 tests - RFC 5545 validation rules
-psql -d test_database -f tests/test_bysetpos.sql           # BYSETPOS functionality
-psql -d test_database -f tests/test_optimizations.sql      # Performance optimizations
-psql -d test_database -f tests/test_tz_api.sql             # TIMESTAMPTZ API
+# Unit Tests (170 tests)
+psql -d test_database -f tests/test_rrule_functions.sql        # 18 tests - Core RRULE functionality
+psql -d test_database -f tests/test_tzid_support.sql           # 20 tests - TZID/Timezone support
+psql -d test_database -f tests/test_wkst_support.sql           # 22 tests - WKST/Week Start support
+psql -d test_database -f tests/test_skip_support.sql           # 15 tests - SKIP/Month-end handling
+psql -d test_database -f tests/test_rfc_compliance.sql         # 15 tests - RFC 5545 & RFC 7529 compliance
+psql -d test_database -f tests/test_validation.sql             # 61 tests - RFC 5545 validation rules
+psql -d test_database -f tests/test_bysetpos.sql               # BYSETPOS functionality
+psql -d test_database -f tests/test_optimizations.sql          # Performance optimizations
+psql -d test_database -f tests/test_tz_api.sql                 # TIMESTAMPTZ API (existing functions)
+psql -d test_database -f tests/test_tz_api_new_functions.sql   # 19 tests - New TIMESTAMPTZ API functions
 
 # Integration Tests (17 tests)
-psql -d test_database -f tests/test_table_operations.sql   # 17 tests - Real-world table operations
+psql -d test_database -f tests/test_table_operations.sql       # 17 tests - Real-world table operations
 ```
 
-**Total Test Coverage:** 168 tests (151 unit + 17 integration) across 10 comprehensive test suites
+**Total Test Coverage:** 187 tests (170 unit + 17 integration) across 11 comprehensive test suites
 
 ---
 
@@ -134,9 +135,9 @@ psql -d test_database -f tests/test_table_operations.sql   # 17 tests - Real-wor
    - Displays security warnings during installation
    - See [INCLUDING_SUBDAY_OPERATIONS.md](INCLUDING_SUBDAY_OPERATIONS.md)
 
-4. **test_*.sql** (10 test suites, 168 tests)
+4. **test_*.sql** (11 test suites, 187 tests)
    - Comprehensive test coverage
-   - Unit tests (151): Core RRULE functionality, RFC compliance, TZID/timezone support, SKIP/WKST/BYSETPOS, validation rules
+   - Unit tests (170): Core RRULE functionality, RFC compliance, TZID/timezone support, SKIP/WKST/BYSETPOS, validation rules, new TIMESTAMPTZ API functions
    - Integration tests (17): Real-world table operations (subscriptions, events, resources)
 
 ---
@@ -269,14 +270,14 @@ All RRULEs are validated **before** processing:
 
 ### Before Submitting
 
-1. **Run all tests** - Ensure 168/168 tests pass (151 unit + 17 integration)
+1. **Run all tests** - Ensure 187/187 tests pass (170 unit + 17 integration)
 2. **Add test coverage** - Include tests for new features
 3. **Document changes** - Update relevant .md files
 4. **Follow conventions** - Match existing code style
 
 ### Pull Request Checklist
 
-- [ ] All tests pass (168/168)
+- [ ] All tests pass (187/187)
 - [ ] New features have test coverage
 - [ ] Documentation updated (README.md, API_REFERENCE.md, etc.)
 - [ ] No breaking changes (or clearly documented if necessary)
