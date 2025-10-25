@@ -13,7 +13,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "echo 'Run: psql -d postgres -f tests/test_rrule_functions.sql && psql -d postgres -f tests/test_validation.sql'"
+    "test": "./test.sh"
   },
   "repository": {
     "type": "git",

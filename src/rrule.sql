@@ -66,7 +66,7 @@ CREATE TYPE rrule_parts AS (
 );
 
 
--- Create a function to parse the RRULE into it's composite type
+-- Create a function to parse the RRULE into its composite type
 CREATE OR REPLACE FUNCTION parse_rrule_parts( TIMESTAMP WITH TIME ZONE, TEXT ) RETURNS rrule.rrule_parts AS $$
 DECLARE
   basedate   ALIAS FOR $1;
@@ -1337,138 +1337,40 @@ $$ LANGUAGE plpgsql IMMUTABLE;  -- STRICT removed to allow NULL max_results
 
 
 ------------------------------------------------------------------------------------------------------
--- HOURLY frequency handler
--- ⚠️  WARNING: This frequency can generate thousands of occurrences quickly
--- ⚠️  Recommended limits: COUNT <= 1000, UNTIL <= 7 days from dtstart
--- ⚠️  Use case: "Every 3 hours" (FREQ=HOURLY;INTERVAL=3;COUNT=8)
+-- SUB-DAY FREQUENCY FUNCTIONS (HOURLY, MINUTELY, SECONDLY)
 ------------------------------------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION hourly_set( TIMESTAMP WITH TIME ZONE, rrule.rrule_parts ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
-DECLARE
-  after ALIAS FOR $1;
-  rrule ALIAS FOR $2;
-BEGIN
-
-  -- Apply day-level filters first
-  IF rrule.bymonth IS NOT NULL AND NOT date_part('month',after) = ANY ( rrule.bymonth ) THEN
-    RETURN;
-  END IF;
-
-  IF rrule.bymonthday IS NOT NULL AND NOT date_part('day',after) = ANY ( rrule.bymonthday ) THEN
-    RETURN;
-  END IF;
-
-  IF rrule.byday IS NOT NULL AND NOT substring( to_char( after, 'DY') for 2 from 1) = ANY ( rrule.byday ) THEN
-    RETURN;
-  END IF;
-
-  -- Apply hour filter
-  IF rrule.byhour IS NOT NULL AND NOT date_part('hour',after) = ANY ( rrule.byhour ) THEN
-    RETURN;
-  END IF;
-
-  -- Apply minute/second filters if specified
-  IF rrule.byminute IS NOT NULL AND NOT date_part('minute',after) = ANY ( rrule.byminute ) THEN
-    RETURN;
-  END IF;
-
-  IF rrule.bysecond IS NOT NULL AND NOT date_part('second',after)::INT = ANY ( rrule.bysecond ) THEN
-    RETURN;
-  END IF;
-
-  RETURN NEXT after;
-
-END;
-$$ LANGUAGE plpgsql IMMUTABLE STRICT;
-
-
+--
+-- These frequencies are DISABLED in the standard installation for security reasons.
+--
+-- WHY DISABLED?
+-- - HOURLY: Can generate 8,760 occurrences per year
+-- - MINUTELY: Can generate 525,600 occurrences per year
+-- - SECONDLY: Can generate 31,536,000 occurrences per year
+-- - Risk of denial-of-service in multi-tenant environments
+-- - Can exhaust CPU, memory, and database connection pools
+--
+-- HOW TO ENABLE:
+-- Use the alternative installation script which includes sub-day frequency support:
+--   cd src
+--   psql -d your_database -f install_with_subday.sql
+--
+-- This will load rrule_subday.sql which defines:
+--   - hourly_set() function
+--   - minutely_set() function
+--   - secondly_set() function
+--   - Modified event loop that enables sub-day frequencies
+--
+-- SECURITY REQUIREMENTS:
+-- Before enabling, you MUST:
+-- 1. Review security implications in INCLUDING_SUBDAY_OPERATIONS.md
+-- 2. Implement application-level validation (COUNT/UNTIL limits)
+-- 3. Configure statement_timeout to prevent runaway queries
+-- 4. Set up monitoring for long-running queries
+-- 5. Test thoroughly in staging environment
+--
+-- See src/rrule_subday.sql for the complete implementation.
+--
 ------------------------------------------------------------------------------------------------------
--- MINUTELY frequency handler
--- ⚠️  WARNING: This frequency can generate 525,600 occurrences per year
--- ⚠️  SECURITY RISK: Can exhaust database resources in multi-tenant environments
--- ⚠️  Recommended limits: COUNT <= 1000, UNTIL <= 24 hours from dtstart
--- ⚠️  Use case: "Every 15 minutes" (FREQ=MINUTELY;INTERVAL=15;COUNT=96)
-------------------------------------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION minutely_set( TIMESTAMP WITH TIME ZONE, rrule.rrule_parts ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
-DECLARE
-  after ALIAS FOR $1;
-  rrule ALIAS FOR $2;
-BEGIN
-
-  -- Apply day-level filters first
-  IF rrule.bymonth IS NOT NULL AND NOT date_part('month',after) = ANY ( rrule.bymonth ) THEN
-    RETURN;
-  END IF;
-
-  IF rrule.bymonthday IS NOT NULL AND NOT date_part('day',after) = ANY ( rrule.bymonthday ) THEN
-    RETURN;
-  END IF;
-
-  IF rrule.byday IS NOT NULL AND NOT substring( to_char( after, 'DY') for 2 from 1) = ANY ( rrule.byday ) THEN
-    RETURN;
-  END IF;
-
-  -- Apply time filters
-  IF rrule.byhour IS NOT NULL AND NOT date_part('hour',after) = ANY ( rrule.byhour ) THEN
-    RETURN;
-  END IF;
-
-  IF rrule.byminute IS NOT NULL AND NOT date_part('minute',after) = ANY ( rrule.byminute ) THEN
-    RETURN;
-  END IF;
-
-  IF rrule.bysecond IS NOT NULL AND NOT date_part('second',after)::INT = ANY ( rrule.bysecond ) THEN
-    RETURN;
-  END IF;
-
-  RETURN NEXT after;
-
-END;
-$$ LANGUAGE plpgsql IMMUTABLE STRICT;
-
-
-------------------------------------------------------------------------------------------------------
--- SECONDLY frequency handler
--- ⚠️  CRITICAL SECURITY WARNING: This frequency can generate 31,536,000 occurrences per year
--- ⚠️  DENIAL OF SERVICE RISK: Can exhaust CPU, memory, and connection pools
--- ⚠️  DO NOT USE in production multi-tenant environments without strict limits
--- ⚠️  Recommended limits: COUNT <= 1000, UNTIL <= 1 hour from dtstart
--- ⚠️  Use case: "Every 30 seconds for 5 minutes" (FREQ=SECONDLY;INTERVAL=30;COUNT=10)
-------------------------------------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION secondly_set( TIMESTAMP WITH TIME ZONE, rrule.rrule_parts ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
-DECLARE
-  after ALIAS FOR $1;
-  rrule ALIAS FOR $2;
-BEGIN
-
-  -- Apply all filters
-  IF rrule.bymonth IS NOT NULL AND NOT date_part('month',after) = ANY ( rrule.bymonth ) THEN
-    RETURN;
-  END IF;
-
-  IF rrule.bymonthday IS NOT NULL AND NOT date_part('day',after) = ANY ( rrule.bymonthday ) THEN
-    RETURN;
-  END IF;
-
-  IF rrule.byday IS NOT NULL AND NOT substring( to_char( after, 'DY') for 2 from 1) = ANY ( rrule.byday ) THEN
-    RETURN;
-  END IF;
-
-  IF rrule.byhour IS NOT NULL AND NOT date_part('hour',after) = ANY ( rrule.byhour ) THEN
-    RETURN;
-  END IF;
-
-  IF rrule.byminute IS NOT NULL AND NOT date_part('minute',after) = ANY ( rrule.byminute ) THEN
-    RETURN;
-  END IF;
-
-  IF rrule.bysecond IS NOT NULL AND NOT date_part('second',after)::INT = ANY ( rrule.bysecond ) THEN
-    RETURN;
-  END IF;
-
-  RETURN NEXT after;
-
-END;
-$$ LANGUAGE plpgsql IMMUTABLE STRICT;
 
 
 ------------------------------------------------------------------------------------------------------
@@ -1699,6 +1601,19 @@ END;
 $$ LANGUAGE plpgsql IMMUTABLE STRICT;
 
 
+------------------------------------------------------------------------------------------------------
+-- INTERNAL UTILITY: Convert iCalendar duration format to PostgreSQL interval
+------------------------------------------------------------------------------------------------------
+-- This is an internal utility function for parsing iCalendar DURATION format (RFC 5545 Section 3.3.6).
+-- Example: 'P1DT12H' → '1 day 12 hours'::interval
+--
+-- NOTE: This function is not part of the stable public API and may change in future versions.
+-- It exists for advanced users who need to work with iCalendar duration strings.
+--
+-- For most use cases, use PostgreSQL's native interval syntax instead:
+--   '1 day 12 hours'::interval  (preferred)
+--   icalendar_interval_to_SQL('P1DT12H')  (for iCalendar compatibility only)
+------------------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION icalendar_interval_to_SQL( TEXT ) RETURNS interval AS $function$
   SELECT CASE WHEN substring($1,1,1) = '-' THEN -1 ELSE 1 END * regexp_replace( regexp_replace($1, '[PT-]', '', 'g'), '([A-Z])', E'\\1 ', 'g')::interval;
 $function$ LANGUAGE sql IMMUTABLE STRICT;

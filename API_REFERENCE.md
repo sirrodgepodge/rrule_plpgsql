@@ -456,6 +456,81 @@ Our API aligns with de facto standards from popular RRULE libraries:
 
 ---
 
+## NULL Handling
+
+All rrule_plpgsql functions use PostgreSQL's `STRICT` mode, which provides consistent NULL handling:
+
+**Behavior:**
+- **NULL inputs return NULL** (not an error)
+- Functions will not execute if any required parameter is NULL
+- This follows PostgreSQL conventions for immutable functions
+
+**Examples:**
+
+```sql
+-- NULL rrule parameter returns NULL
+SELECT rrule.all(NULL, '2025-01-01 10:00:00'::TIMESTAMP);
+-- Result: NULL (no rows returned)
+
+-- NULL dtstart parameter returns NULL
+SELECT rrule.all('FREQ=DAILY;COUNT=5', NULL);
+-- Result: NULL (no rows returned)
+
+-- Both NULL parameters return NULL
+SELECT rrule.all(NULL, NULL);
+-- Result: NULL (no rows returned)
+
+-- Valid parameters return results as expected
+SELECT rrule.all('FREQ=DAILY;COUNT=5', '2025-01-01 10:00:00'::TIMESTAMP);
+-- Result: SETOF TIMESTAMP with 5 dates
+```
+
+**Why STRICT mode?**
+- ✅ Performance: Avoids function execution for NULL inputs
+- ✅ Consistency: Standard PostgreSQL behavior
+- ✅ Immutability: Allows aggressive query optimization and caching
+- ✅ No side effects: NULL input → NULL output (deterministic)
+
+**Handling NULLs in your application:**
+
+```sql
+-- Check for NULL before calling (recommended)
+SELECT
+  CASE
+    WHEN user_rrule IS NOT NULL AND dtstart IS NOT NULL
+    THEN rrule.all(user_rrule, dtstart)
+    ELSE NULL
+  END AS occurrences
+FROM events;
+
+-- Use COALESCE to provide defaults
+SELECT rrule.all(
+  COALESCE(user_rrule, 'FREQ=DAILY;COUNT=1'),  -- Default RRULE if NULL
+  COALESCE(dtstart, CURRENT_TIMESTAMP)          -- Default to now if NULL
+);
+
+-- Filter out NULL results in aggregations
+SELECT array_agg(occurrence) FILTER (WHERE occurrence IS NOT NULL)
+FROM events
+CROSS JOIN LATERAL rrule.all(rrule_string, start_date) AS occurrence;
+```
+
+**Exception handling:**
+
+STRICT mode applies to NULL inputs. Invalid RRULE strings will still raise exceptions with descriptive error messages:
+
+```sql
+-- NULL input: Returns NULL (no error)
+SELECT rrule.all(NULL, '2025-01-01'::TIMESTAMP);
+
+-- Invalid RRULE: Raises exception with helpful message
+SELECT rrule.all('FREQ=INVALID', '2025-01-01'::TIMESTAMP);
+-- ERROR: Invalid RRULE: FREQ parameter is required.
+-- Specify one of: SECONDLY, MINUTELY, HOURLY, DAILY, WEEKLY, MONTHLY, or YEARLY
+```
+
+---
+
 ## See Also
 
 - [SPEC_COMPLIANCE.md](SPEC_COMPLIANCE.md) - RFC 5545/7529 feature support

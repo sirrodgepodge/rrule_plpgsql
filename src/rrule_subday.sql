@@ -201,7 +201,9 @@ $$ LANGUAGE plpgsql IMMUTABLE STRICT;
 
 ------------------------------------------------------------------------------------------------------
 -- Override rrule_event_instances_range to enable sub-day frequencies
--- This replaces the version from rrule.sql that has sub-day frequencies commented out
+-- This replaces the version from rrule.sql which rejects HOURLY/MINUTELY/SECONDLY with an error.
+-- Also provides the actual implementations of hourly_set(), minutely_set(), and secondly_set()
+-- which are not defined in the standard rrule.sql installation.
 ------------------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION rrule_event_instances_range( TIMESTAMP WITH TIME ZONE, TEXT, TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE, INT )
                                          RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
