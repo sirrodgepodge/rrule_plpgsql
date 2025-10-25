@@ -25,7 +25,6 @@ SET search_path = rrule, public;
 
 -- Load the RRULE functions if not already loaded
 \i src/rrule.sql
-\i src/rrule_wrappers.sql
 
 -- Helper function to compare expected vs actual occurrences
 CREATE OR REPLACE FUNCTION assert_occurrences_equal(

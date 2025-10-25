@@ -26,7 +26,6 @@ SET search_path = rrule, public;
 
 -- Load the RRULE functions if not already loaded
 \i src/rrule.sql
--- \i src/rrule_wrappers.sql  -- File doesn't exist, not needed
 
 -- Helper function to test that invalid RRULEs are rejected
 CREATE OR REPLACE FUNCTION assert_rrule_rejected(

@@ -574,16 +574,130 @@ for subscription in active_subscriptions:
 
 ### Index Strategy
 
+**Important**: RRULE generation functions are computationally expensive. Proper indexing is critical for performance when querying tables that use RRULE functions.
+
+#### Recommended Indexes for Common Tables
+
+**For subscription/recurring event tables:**
 ```sql
--- Index filtered columns for efficient WHERE clauses
+-- Index columns used in WHERE clauses before RRULE expansion
 CREATE INDEX idx_subscriptions_status ON subscriptions(status);
+CREATE INDEX idx_subscriptions_user_id ON subscriptions(user_id);
+
+-- Index timestamp columns for date range queries
+CREATE INDEX idx_subscriptions_start_date ON subscriptions(subscription_start);
 CREATE INDEX idx_subscriptions_next_billing ON subscriptions(next_billing_date);
 
--- Composite index for common query patterns
+-- Composite index for common query patterns (status + date range)
 CREATE INDEX idx_subscriptions_status_next_billing
-    ON subscriptions(status, next_billing_date);
+    ON subscriptions(status, next_billing_date)
+    WHERE status = 'active';  -- Partial index for active subscriptions only
 
--- Don't index rrule column (text, not useful for indexing)
+-- Don't index rrule_string column (text pattern matching not useful)
+```
+
+**For calendar events with occurrence expansion:**
+```sql
+-- Index for filtering events before expanding occurrences
+CREATE INDEX idx_events_user_id ON events(user_id);
+CREATE INDEX idx_events_status ON events(status);
+
+-- Critical: Index dtstart and dtend for date range queries
+CREATE INDEX idx_events_dtstart ON events(dtstart);
+CREATE INDEX idx_events_dtend ON events(dtend);
+
+-- Composite index for date range + status queries
+CREATE INDEX idx_events_date_range_status
+    ON events(dtstart, dtend, status);
+
+-- If using JSONB for rrule storage (alternative to TEXT)
+CREATE INDEX idx_events_rrule_gin ON events USING gin(rrule_data jsonb_path_ops);
+```
+
+**For resource scheduling (rooms, equipment):**
+```sql
+-- Index resource_id for filtering before occurrence expansion
+CREATE INDEX idx_bookings_resource_id ON bookings(resource_id);
+
+-- Index booking dates for overlap detection
+CREATE INDEX idx_bookings_dates ON bookings(start_time, end_time);
+
+-- Composite index for resource availability queries
+CREATE INDEX idx_bookings_resource_dates
+    ON bookings(resource_id, start_time, end_time);
+
+-- GiST index for advanced date range queries (optional)
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+CREATE INDEX idx_bookings_resource_daterange
+    ON bookings USING gist(resource_id, tstzrange(start_time, end_time));
+```
+
+#### Performance Best Practices
+
+**1. Filter Before Expanding**
+```sql
+-- Good: Filter with indexed columns first
+SELECT occurrence
+FROM subscriptions s
+CROSS JOIN LATERAL rrule.all(s.rrule, s.subscription_start) AS occurrence
+WHERE s.status = 'active'           -- Uses idx_subscriptions_status
+  AND s.user_id = 123                -- Uses idx_subscriptions_user_id
+  AND occurrence > NOW();
+
+-- Bad: Expand all rows, then filter
+SELECT occurrence
+FROM subscriptions s
+CROSS JOIN LATERAL rrule.all(s.rrule, s.subscription_start) AS occurrence
+WHERE occurrence > NOW()
+  AND s.user_id = 123;  -- Filter happens after expensive expansion!
+```
+
+**2. Cache Computed Results**
+```sql
+-- Best practice: Store computed next occurrence in indexed column
+-- Update this column periodically (e.g., daily batch job or after each event)
+UPDATE subscriptions
+SET next_billing_date = rrule.next(rrule, subscription_start)
+WHERE status = 'active'
+  AND (next_billing_date IS NULL OR next_billing_date <= NOW());
+
+-- Then query the cached value (fast!)
+SELECT * FROM subscriptions
+WHERE status = 'active'
+  AND next_billing_date BETWEEN '2025-01-01' AND '2025-01-31';
+```
+
+**3. Use Partial Indexes for Large Tables**
+```sql
+-- Only index active records (reduces index size and maintenance)
+CREATE INDEX idx_subscriptions_active_next_billing
+    ON subscriptions(next_billing_date)
+    WHERE status = 'active';
+
+-- Query automatically uses partial index
+SELECT * FROM subscriptions
+WHERE status = 'active'
+  AND next_billing_date > NOW();
+```
+
+**4. Monitor Query Performance**
+```sql
+-- Use EXPLAIN ANALYZE to verify index usage
+EXPLAIN ANALYZE
+SELECT occurrence
+FROM events e
+CROSS JOIN LATERAL rrule.between(
+    e.rrule,
+    e.dtstart,
+    '2025-01-01'::TIMESTAMPTZ,
+    '2025-01-31'::TIMESTAMPTZ
+) AS occurrence
+WHERE e.status = 'active';
+
+-- Look for:
+--   - "Index Scan" (good) vs "Seq Scan" (bad for large tables)
+--   - Low actual execution time
+--   - Reasonable number of rows processed
 ```
 
 ---

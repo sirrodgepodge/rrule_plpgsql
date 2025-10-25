@@ -120,28 +120,28 @@ BEGIN
 
   -- Validation 1: FREQ is REQUIRED
   IF result.freq IS NULL THEN
-    RAISE EXCEPTION 'Invalid RRULE: FREQ parameter is required.  Specify one of: SECONDLY, MINUTELY, HOURLY, DAILY, WEEKLY, MONTHLY, or YEARLY.  RFC 5545 Section 3.3.10: "FREQ rule part is REQUIRED"';
+    RAISE EXCEPTION 'Invalid RRULE: FREQ parameter is required. Specify one of: SECONDLY, MINUTELY, HOURLY, DAILY, WEEKLY, MONTHLY, or YEARLY.  RFC 5545 Section 3.3.10: "FREQ rule part is REQUIRED"';
   END IF;
 
   -- Validation 2: COUNT and UNTIL are mutually exclusive
   IF result.count IS NOT NULL AND result.until IS NOT NULL THEN
-    RAISE EXCEPTION 'Invalid RRULE: COUNT and UNTIL are mutually exclusive.  Specify either COUNT (number of occurrences) OR UNTIL (end date), not both.  Current RRULE has COUNT=% and UNTIL=%.  RFC 5545 Section 3.3.10: "they MUST NOT occur in the same recur"', result.count, result.until;
+    RAISE EXCEPTION 'Invalid RRULE: COUNT and UNTIL are mutually exclusive. Specify either COUNT (number of occurrences) OR UNTIL (end date), not both. Current RRULE has COUNT=% and UNTIL=%.  RFC 5545 Section 3.3.10: "they MUST NOT occur in the same recur"', result.count, result.until;
   END IF;
 
   -- Validation 3: BYWEEKNO only valid with YEARLY frequency
   IF result.byweekno IS NOT NULL AND result.freq != 'YEARLY' THEN
-    RAISE EXCEPTION 'Invalid RRULE: BYWEEKNO can only be used with FREQ=YEARLY.  Current FREQ=%. BYWEEKNO specifies ISO 8601 week numbers within a year.  Use FREQ=YEARLY or remove BYWEEKNO.  RFC 5545 Section 3.3.10: "BYWEEKNO MUST NOT be used when FREQ is not YEARLY"', result.freq;
+    RAISE EXCEPTION 'Invalid RRULE: BYWEEKNO can only be used with FREQ=YEARLY. Current FREQ=%. BYWEEKNO specifies ISO 8601 week numbers within a year. Use FREQ=YEARLY or remove BYWEEKNO.  RFC 5545 Section 3.3.10: "BYWEEKNO MUST NOT be used when FREQ is not YEARLY"', result.freq;
   END IF;
 
   -- Validation 4: BYYEARDAY not valid with DAILY, WEEKLY, or MONTHLY
   IF result.byyearday IS NOT NULL AND
      result.freq IN ('DAILY', 'WEEKLY', 'MONTHLY') THEN
-    RAISE EXCEPTION 'Invalid RRULE: BYYEARDAY cannot be used with FREQ=%.  BYYEARDAY is only valid with FREQ=YEARLY (and sub-day frequencies).  Use FREQ=YEARLY or use BYMONTHDAY instead.  RFC 5545 Section 3.3.10: "BYYEARDAY MUST NOT be specified when FREQ is DAILY, WEEKLY, or MONTHLY"', result.freq;
+    RAISE EXCEPTION 'Invalid RRULE: BYYEARDAY cannot be used with FREQ=%. BYYEARDAY is only valid with FREQ=YEARLY (and sub-day frequencies). Use FREQ=YEARLY or use BYMONTHDAY instead.  RFC 5545 Section 3.3.10: "BYYEARDAY MUST NOT be specified when FREQ is DAILY, WEEKLY, or MONTHLY"', result.freq;
   END IF;
 
   -- Validation 5: BYMONTHDAY not valid with WEEKLY frequency
   IF result.bymonthday IS NOT NULL AND result.freq = 'WEEKLY' THEN
-    RAISE EXCEPTION 'Invalid RRULE: BYMONTHDAY cannot be used with FREQ=WEEKLY.  BYMONTHDAY specifies day-of-month filters which are not applicable to weekly recurrence.  Use FREQ=DAILY with BYDAY filter instead.  Example: FREQ=DAILY;BYDAY=MO,WE,FR for specific weekdays.  RFC 5545 Section 3.3.10: "BYMONTHDAY MUST NOT be specified when the FREQ rule part is set to WEEKLY"';
+    RAISE EXCEPTION 'Invalid RRULE: BYMONTHDAY cannot be used with FREQ=WEEKLY. BYMONTHDAY specifies day-of-month filters which are not applicable to weekly recurrence. Use FREQ=DAILY with BYDAY filter instead. Example: FREQ=DAILY;BYDAY=MO,WE,FR for specific weekdays.  RFC 5545 Section 3.3.10: "BYMONTHDAY MUST NOT be specified when the FREQ rule part is set to WEEKLY"';
   END IF;
 
   -- Validation 6: BYDAY with ordinals only valid with MONTHLY or YEARLY
@@ -150,7 +150,7 @@ BEGIN
       EXIT WHEN result.byday[i] IS NULL;
       -- Check if BYDAY has numeric prefix (ordinal like "2MO" or "-1FR")
       IF result.byday[i] ~ '^[+-]?[0-9]+' THEN
-        RAISE EXCEPTION 'Invalid RRULE: BYDAY with ordinal (%) can only be used with FREQ=MONTHLY or FREQ=YEARLY.  Current FREQ=%. Ordinals (like 2MO for "2nd Monday" or -1FR for "last Friday") are only meaningful within a month or year.  Either change FREQ to MONTHLY/YEARLY or remove the ordinal prefix (use MO instead of 2MO).  RFC 5545 Section 3.3.10: "BYDAY MUST NOT be specified with numeric value when FREQ is not MONTHLY/YEARLY"', result.byday[i], result.freq;
+        RAISE EXCEPTION 'Invalid RRULE: BYDAY with ordinal (%) can only be used with FREQ=MONTHLY or FREQ=YEARLY. Current FREQ=%. Ordinals (like 2MO for "2nd Monday" or -1FR for "last Friday") are only meaningful within a month or year. Either change FREQ to MONTHLY/YEARLY or remove the ordinal prefix (use MO instead of 2MO).  RFC 5545 Section 3.3.10: "BYDAY MUST NOT be specified with numeric value when FREQ is not MONTHLY/YEARLY"', result.byday[i], result.freq;
       END IF;
     END LOOP;
   END IF;
@@ -161,7 +161,7 @@ BEGIN
       EXIT WHEN result.byday[i] IS NULL;
       -- Check if BYDAY has numeric prefix (ordinal like "2MO" or "-1FR")
       IF result.byday[i] ~ '^[+-]?[0-9]+' THEN
-        RAISE EXCEPTION 'Invalid RRULE: BYDAY with ordinal (%) cannot be used when FREQ=YEARLY and BYWEEKNO is specified.  Ordinals are ambiguous when combined with week numbers. Use BYDAY without ordinals (e.g., MO instead of 2MO) or remove BYWEEKNO.  Example valid: FREQ=YEARLY;BYWEEKNO=10;BYDAY=MO.  RFC 5545 Section 3.3.10: "BYDAY MUST NOT be specified with a numeric value with the FREQ rule part set to YEARLY when the BYWEEKNO rule part is specified"', result.byday[i];
+        RAISE EXCEPTION 'Invalid RRULE: BYDAY with ordinal (%) cannot be used when FREQ=YEARLY and BYWEEKNO is specified. Ordinals are ambiguous when combined with week numbers. Use BYDAY without ordinals (e.g., MO instead of 2MO) or remove BYWEEKNO. Example valid: FREQ=YEARLY;BYWEEKNO=10;BYDAY=MO.  RFC 5545 Section 3.3.10: "BYDAY MUST NOT be specified with a numeric value with the FREQ rule part set to YEARLY when the BYWEEKNO rule part is specified"', result.byday[i];
       END IF;
     END LOOP;
   END IF;
@@ -172,7 +172,7 @@ BEGIN
       EXIT WHEN result.byday[i] IS NULL;
       -- Check if BYDAY has zero ordinal (0MO, +0MO, -0MO, 00MO, etc.)
       IF result.byday[i] ~ '^[+-]?0+(MO|TU|WE|TH|FR|SA|SU)$' THEN
-        RAISE EXCEPTION 'Invalid RRULE: BYDAY ordinal cannot be zero (%).  Valid ordinals are 1-53 or -1 to -53.  Use BYDAY=% instead of BYDAY=%.  RFC 5545 Section 3.3.10: "ordwk = 1*2DIGIT ;1 to 53"',
+        RAISE EXCEPTION 'Invalid RRULE: BYDAY ordinal cannot be zero (%). Valid ordinals are 1-53 or -1 to -53. Use BYDAY=% instead of BYDAY=%.  RFC 5545 Section 3.3.10: "ordwk = 1*2DIGIT ;1 to 53"',
           result.byday[i],
           substring(result.byday[i] from '(MO|TU|WE|TH|FR|SA|SU)$'),
           result.byday[i];
@@ -190,7 +190,7 @@ BEGIN
        result.bymonth IS NULL AND
        result.byyearday IS NULL AND
        result.byweekno IS NULL THEN
-      RAISE EXCEPTION 'Invalid RRULE: BYSETPOS requires at least one other BYxxx parameter.  BYSETPOS selects specific positions from a set of occurrences, but you must specify which set using BYDAY, BYMONTHDAY, BYHOUR, etc.  Example: FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1 (last workday of month).  RFC 5545 Section 3.3.10: "BYSETPOS MUST only be used in conjunction with another BYxxx rule part"';
+      RAISE EXCEPTION 'Invalid RRULE: BYSETPOS requires at least one other BYxxx parameter. BYSETPOS selects specific positions from a set of occurrences, but you must specify which set using BYDAY, BYMONTHDAY, BYHOUR, etc. Example: FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1 (last workday of month).  RFC 5545 Section 3.3.10: "BYSETPOS MUST only be used in conjunction with another BYxxx rule part"';
     END IF;
   END IF;
 
@@ -200,7 +200,7 @@ BEGIN
     FOR i IN 1..array_length(result.bysecond, 1) LOOP
       EXIT WHEN result.bysecond[i] IS NULL;
       IF result.bysecond[i] < 0 OR result.bysecond[i] > 60 THEN
-        RAISE EXCEPTION 'Invalid RRULE: BYSECOND=% is out of valid range.  Valid values are 0-60 (60 for leap seconds).  RFC 5545 Section 3.3.10: "Valid values are 0 to 60"', result.bysecond[i];
+        RAISE EXCEPTION 'Invalid RRULE: BYSECOND=% is out of valid range. Valid values are 0-60 (60 for leap seconds).  RFC 5545 Section 3.3.10: "Valid values are 0 to 60"', result.bysecond[i];
       END IF;
     END LOOP;
   END IF;
@@ -210,7 +210,7 @@ BEGIN
     FOR i IN 1..array_length(result.byminute, 1) LOOP
       EXIT WHEN result.byminute[i] IS NULL;
       IF result.byminute[i] < 0 OR result.byminute[i] > 59 THEN
-        RAISE EXCEPTION 'Invalid RRULE: BYMINUTE=% is out of valid range.  Valid values are 0-59.  RFC 5545 Section 3.3.10: "Valid values are 0 to 59"', result.byminute[i];
+        RAISE EXCEPTION 'Invalid RRULE: BYMINUTE=% is out of valid range. Valid values are 0-59.  RFC 5545 Section 3.3.10: "Valid values are 0 to 59"', result.byminute[i];
       END IF;
     END LOOP;
   END IF;
@@ -220,7 +220,7 @@ BEGIN
     FOR i IN 1..array_length(result.byhour, 1) LOOP
       EXIT WHEN result.byhour[i] IS NULL;
       IF result.byhour[i] < 0 OR result.byhour[i] > 23 THEN
-        RAISE EXCEPTION 'Invalid RRULE: BYHOUR=% is out of valid range.  Valid values are 0-23 (0 = midnight, 23 = 11 PM).  RFC 5545 Section 3.3.10: "Valid values are 0 to 23"', result.byhour[i];
+        RAISE EXCEPTION 'Invalid RRULE: BYHOUR=% is out of valid range. Valid values are 0-23 (0 = midnight, 23 = 11 PM).  RFC 5545 Section 3.3.10: "Valid values are 0 to 23"', result.byhour[i];
       END IF;
     END LOOP;
   END IF;
@@ -230,7 +230,7 @@ BEGIN
     FOR i IN 1..array_length(result.bymonth, 1) LOOP
       EXIT WHEN result.bymonth[i] IS NULL;
       IF result.bymonth[i] < 1 OR result.bymonth[i] > 12 THEN
-        RAISE EXCEPTION 'Invalid RRULE: BYMONTH=% is out of valid range.  Valid values are 1-12 for Gregorian calendar (1=January, 12=December).  RFC 5545 Section 3.3.10: Valid month numbers are 1-12', result.bymonth[i];
+        RAISE EXCEPTION 'Invalid RRULE: BYMONTH=% is out of valid range. Valid values are 1-12 for Gregorian calendar (1=January, 12=December).  RFC 5545 Section 3.3.10: Valid month numbers are 1-12', result.bymonth[i];
       END IF;
     END LOOP;
   END IF;
@@ -240,10 +240,10 @@ BEGIN
     FOR i IN 1..array_length(result.bymonthday, 1) LOOP
       EXIT WHEN result.bymonthday[i] IS NULL;
       IF result.bymonthday[i] = 0 THEN
-        RAISE EXCEPTION 'Invalid RRULE: BYMONTHDAY=0 is not valid.  Valid values are 1-31 or -31 to -1 (negative values count from month end).  Use BYMONTHDAY=1 for first day or BYMONTHDAY=-1 for last day.  RFC 5545 Section 3.3.10: Zero is not a valid BYMONTHDAY value';
+        RAISE EXCEPTION 'Invalid RRULE: BYMONTHDAY=0 is not valid. Valid values are 1-31 or -31 to -1 (negative values count from month end). Use BYMONTHDAY=1 for first day or BYMONTHDAY=-1 for last day.  RFC 5545 Section 3.3.10: Zero is not a valid BYMONTHDAY value';
       END IF;
       IF result.bymonthday[i] > 31 OR result.bymonthday[i] < -31 THEN
-        RAISE EXCEPTION 'Invalid RRULE: BYMONTHDAY=% is out of valid range.  Valid values are 1-31 or -31 to -1.  RFC 5545 Section 3.3.10: Valid range is ±1-31', result.bymonthday[i];
+        RAISE EXCEPTION 'Invalid RRULE: BYMONTHDAY=% is out of valid range. Valid values are 1-31 or -31 to -1.  RFC 5545 Section 3.3.10: Valid range is ±1-31', result.bymonthday[i];
       END IF;
     END LOOP;
   END IF;
@@ -253,10 +253,10 @@ BEGIN
     FOR i IN 1..array_length(result.byyearday, 1) LOOP
       EXIT WHEN result.byyearday[i] IS NULL;
       IF result.byyearday[i] = 0 THEN
-        RAISE EXCEPTION 'Invalid RRULE: BYYEARDAY=0 is not valid.  Valid values are 1-366 or -366 to -1 (negative values count from year end).  Use BYYEARDAY=1 for January 1st or BYYEARDAY=-1 for December 31st.  RFC 5545 Section 3.3.10: Zero is not a valid BYYEARDAY value';
+        RAISE EXCEPTION 'Invalid RRULE: BYYEARDAY=0 is not valid. Valid values are 1-366 or -366 to -1 (negative values count from year end). Use BYYEARDAY=1 for January 1st or BYYEARDAY=-1 for December 31st.  RFC 5545 Section 3.3.10: Zero is not a valid BYYEARDAY value';
       END IF;
       IF result.byyearday[i] > 366 OR result.byyearday[i] < -366 THEN
-        RAISE EXCEPTION 'Invalid RRULE: BYYEARDAY=% is out of valid range.  Valid values are 1-366 or -366 to -1 (366 for leap years).  RFC 5545 Section 3.3.10: Valid range is ±1-366', result.byyearday[i];
+        RAISE EXCEPTION 'Invalid RRULE: BYYEARDAY=% is out of valid range. Valid values are 1-366 or -366 to -1 (366 for leap years).  RFC 5545 Section 3.3.10: Valid range is ±1-366', result.byyearday[i];
       END IF;
     END LOOP;
   END IF;
@@ -266,10 +266,10 @@ BEGIN
     FOR i IN 1..array_length(result.byweekno, 1) LOOP
       EXIT WHEN result.byweekno[i] IS NULL;
       IF result.byweekno[i] = 0 THEN
-        RAISE EXCEPTION 'Invalid RRULE: BYWEEKNO=0 is not valid.  Valid values are 1-53 or -53 to -1 (ISO 8601 week numbers).  RFC 5545 Section 3.3.10: Zero is not a valid BYWEEKNO value';
+        RAISE EXCEPTION 'Invalid RRULE: BYWEEKNO=0 is not valid. Valid values are 1-53 or -53 to -1 (ISO 8601 week numbers).  RFC 5545 Section 3.3.10: Zero is not a valid BYWEEKNO value';
       END IF;
       IF result.byweekno[i] > 53 OR result.byweekno[i] < -53 THEN
-        RAISE EXCEPTION 'Invalid RRULE: BYWEEKNO=% is out of valid range.  Valid values are 1-53 or -53 to -1 (ISO 8601 week numbers).  RFC 5545 Section 3.3.10: Valid range is ±1-53', result.byweekno[i];
+        RAISE EXCEPTION 'Invalid RRULE: BYWEEKNO=% is out of valid range. Valid values are 1-53 or -53 to -1 (ISO 8601 week numbers).  RFC 5545 Section 3.3.10: Valid range is ±1-53', result.byweekno[i];
       END IF;
     END LOOP;
   END IF;
@@ -279,10 +279,10 @@ BEGIN
     FOR i IN 1..array_length(result.bysetpos, 1) LOOP
       EXIT WHEN result.bysetpos[i] IS NULL;
       IF result.bysetpos[i] = 0 THEN
-        RAISE EXCEPTION 'Invalid RRULE: BYSETPOS=0 is not valid.  Valid values are 1-366 or -366 to -1 for position selection.  Use BYSETPOS=1 for first occurrence or BYSETPOS=-1 for last occurrence.  RFC 5545 Section 3.3.10: Zero is not a valid BYSETPOS value';
+        RAISE EXCEPTION 'Invalid RRULE: BYSETPOS=0 is not valid. Valid values are 1-366 or -366 to -1 for position selection. Use BYSETPOS=1 for first occurrence or BYSETPOS=-1 for last occurrence.  RFC 5545 Section 3.3.10: Zero is not a valid BYSETPOS value';
       END IF;
       IF result.bysetpos[i] > 366 OR result.bysetpos[i] < -366 THEN
-        RAISE EXCEPTION 'Invalid RRULE: BYSETPOS=% is out of valid range.  Valid values are 1-366 or -366 to -1.  RFC 5545 Section 3.3.10: Valid range is ±1-366', result.bysetpos[i];
+        RAISE EXCEPTION 'Invalid RRULE: BYSETPOS=% is out of valid range. Valid values are 1-366 or -366 to -1.  RFC 5545 Section 3.3.10: Valid range is ±1-366', result.bysetpos[i];
       END IF;
     END LOOP;
   END IF;
@@ -1281,7 +1281,7 @@ BEGIN
   -- Validate: BYMONTH + BYYEARDAY is contradictory and not supported
   -- Example invalid case: "February (month 2) on day 100 of year" is impossible
   IF rrule.bymonth IS NOT NULL AND rrule.byyearday IS NOT NULL THEN
-    RAISE EXCEPTION 'Invalid RRULE: FREQ=YEARLY with both BYMONTH and BYYEARDAY is not supported.  BYMONTH specifies a specific month, while BYYEARDAY specifies a day of the year -  these constraints are contradictory. Use either BYMONTH or BYYEARDAY, not both.  Example valid patterns: FREQ=YEARLY;BYMONTH=2 or FREQ=YEARLY;BYYEARDAY=100';
+    RAISE EXCEPTION 'Invalid RRULE: FREQ=YEARLY with both BYMONTH and BYYEARDAY is not supported. BYMONTH specifies a specific month, while BYYEARDAY specifies a day of the year - these constraints are contradictory. Use either BYMONTH or BYYEARDAY, not both. Example valid patterns: FREQ=YEARLY;BYMONTH=2 or FREQ=YEARLY;BYYEARDAY=100';
   END IF;
 
   -- Determine which generator to use, with BYWEEKNO as filter or generator
@@ -1520,14 +1520,12 @@ BEGIN
                                                      CASE WHEN rrule.bysetpos IS NULL
                                                           THEN loopmax - loopcount
                                                           ELSE NULL END) d WHERE d >= base_day LOOP
---        IF rrule.test_byday_rule(current,rrule.byday) AND rrule.test_bymonthday_rule(current,rrule.bymonthday) AND rrule.test_bymonth_rule(current,rrule.bymonth) THEN
           EXIT WHEN rrule.until IS NOT NULL AND current > rrule.until;
           IF current >= mindate THEN
             RETURN NEXT current;
           END IF;
           loopcount := loopcount + 1;
           EXIT WHEN loopcount >= loopmax;
---        END IF;
       END LOOP;
       current_base := current_base + (rrule.interval::text || ' days')::interval;
     ELSIF rrule.freq = 'WEEKLY' THEN
@@ -1553,16 +1551,12 @@ BEGIN
                                                        CASE WHEN rrule.bysetpos IS NULL
                                                             THEN loopmax - loopcount
                                                             ELSE NULL END) m WHERE m >= base_day LOOP
---        IF /* rrule.test_byyearday_rule(current,rrule.byyearday)
---               AND */ rrule.test_bymonth_rule(current,rrule.bymonth)
---        THEN
           EXIT WHEN rrule.until IS NOT NULL AND current > rrule.until;
           IF current >= mindate THEN
             RETURN NEXT current;
           END IF;
           loopcount := loopcount + 1;
           EXIT WHEN loopcount >= loopmax;
---        END IF;
       END LOOP;
       current_base := current_base + (rrule.interval::text || ' months')::interval;
     ELSIF rrule.freq = 'YEARLY' THEN
@@ -1579,83 +1573,27 @@ BEGIN
       END LOOP;
       current_base := current_base + (rrule.interval::text || ' years')::interval;
 
-    -- ⚠️ ⚠️ ⚠️ SUB-DAY FREQUENCIES: COMMENTED OUT FOR SECURITY ⚠️ ⚠️ ⚠️
+    -- ⚠️ SUB-DAY FREQUENCIES NOT AVAILABLE IN STANDARD INSTALLATION
     --
-    -- HOURLY, MINUTELY, and SECONDLY frequencies are FULLY IMPLEMENTED below
-    -- but COMMENTED OUT by default due to security and performance concerns.
+    -- HOURLY, MINUTELY, and SECONDLY frequencies are disabled by default due to
+    -- security and performance concerns (can generate millions of occurrences).
     --
-    -- WHY COMMENTED OUT?
-    -- 1. DENIAL OF SERVICE RISK: Can generate millions of occurrences
-    --    - HOURLY: 8,760 per year
-    --    - MINUTELY: 525,600 per year
-    --    - SECONDLY: 31,536,000 per year
+    -- To enable sub-day frequencies, use the alternative installation:
+    --   psql -d your_database -f src/install_with_subday.sql
     --
-    -- 2. RESOURCE EXHAUSTION: Can exhaust database resources
-    --    - CPU: Computing millions of date increments
-    --    - Memory: Building large TIMESTAMP[] arrays
-    --    - Connections: Blocking connection pool in multi-tenant systems
+    -- SECURITY WARNING: Sub-day frequencies pose DoS risks in multi-tenant environments.
+    -- See INCLUDING_SUBDAY_OPERATIONS.md for:
+    --   - Risk assessment and mitigation strategies
+    --   - Required application-level validation (COUNT/UNTIL limits)
+    --   - Performance implications and monitoring requirements
     --
-    -- 3. MULTI-TENANT RISK: One malicious/misconfigured RRULE can impact all tenants
-    --
-    -- WHEN TO ENABLE:
-    -- - Single-tenant deployments where you control all RRULEs
-    -- - With strict application-level validation (COUNT limits, UNTIL limits)
-    -- - With query timeouts and statement_timeout configured
-    -- - With monitoring and alerting on long-running queries
-    --
-    -- HOW TO ENABLE:
-    -- 1. Uncomment the ELSIF blocks below
-    -- 2. Add application-level validation:
-    --    - HOURLY: COUNT <= 1000, UNTIL <= 7 days
-    --    - MINUTELY: COUNT <= 1000, UNTIL <= 24 hours
-    --    - SECONDLY: COUNT <= 1000, UNTIL <= 1 hour
-    -- 3. Set statement_timeout: SET statement_timeout = '30s';
-    -- 4. Test thoroughly with production data volumes
-    -- 5. Monitor query performance and resource usage
-    --
-    -- EXAMPLE VALIDATION (TypeScript):
-    -- if (rrule.includes('FREQ=HOURLY')) {
-    --   const count = parseInt(rrule.match(/COUNT=(\d+)/)?.[1] || '0');
-    --   if (count > 1000) throw new Error('HOURLY limited to COUNT=1000');
-    -- }
-    --
-    -- ⚠️ ⚠️ ⚠️ UNCOMMENT AT YOUR OWN RISK ⚠️ ⚠️ ⚠️
-
-    -- ELSIF rrule.freq = 'HOURLY' THEN
-    --   FOR current IN SELECT h FROM rrule.hourly_set(current_base,rrule) h WHERE h >= base_day LOOP
-    --     EXIT WHEN rrule.until IS NOT NULL AND current > rrule.until;
-    --     IF current >= mindate THEN
-    --       RETURN NEXT current;
-    --     END IF;
-    --     loopcount := loopcount + 1;
-    --     EXIT WHEN loopcount >= loopmax;
-    --   END LOOP;
-    --   current_base := current_base + (rrule.interval::text || ' hours')::interval;
-    --
-    -- ELSIF rrule.freq = 'MINUTELY' THEN
-    --   FOR current IN SELECT m FROM rrule.minutely_set(current_base,rrule) m WHERE m >= base_day LOOP
-    --     EXIT WHEN rrule.until IS NOT NULL AND current > rrule.until;
-    --     IF current >= mindate THEN
-    --       RETURN NEXT current;
-    --     END IF;
-    --     loopcount := loopcount + 1;
-    --     EXIT WHEN loopcount >= loopmax;
-    --   END LOOP;
-    --   current_base := current_base + (rrule.interval::text || ' minutes')::interval;
-    --
-    -- ELSIF rrule.freq = 'SECONDLY' THEN
-    --   FOR current IN SELECT s FROM rrule.secondly_set(current_base,rrule) s WHERE s >= base_day LOOP
-    --     EXIT WHEN rrule.until IS NOT NULL AND current > rrule.until;
-    --     IF current >= mindate THEN
-    --       RETURN NEXT current;
-    --     END IF;
-    --     loopcount := loopcount + 1;
-    --     EXIT WHEN loopcount >= loopmax;
-    --   END LOOP;
-    --   current_base := current_base + (rrule.interval::text || ' seconds')::interval;
-
     ELSE
-      RAISE NOTICE 'A frequency of "%" is not handled', rrule.freq;
+      -- Provide helpful error message for sub-day frequencies
+      IF rrule.freq IN ('HOURLY', 'MINUTELY', 'SECONDLY') THEN
+        RAISE NOTICE 'Frequency "%" is not supported in standard installation.  Sub-day frequencies (HOURLY, MINUTELY, SECONDLY) are disabled by default for security.  To enable them, use: psql -d your_database -f src/install_with_subday.sql  See INCLUDING_SUBDAY_OPERATIONS.md for security considerations.', rrule.freq;
+      ELSE
+        RAISE NOTICE 'A frequency of "%" is not handled', rrule.freq;
+      END IF;
       RETURN;
     END IF;
     EXIT WHEN rrule.until IS NOT NULL AND current > rrule.until;
