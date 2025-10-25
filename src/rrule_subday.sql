@@ -86,7 +86,7 @@ BEGIN
     RETURN;
   END IF;
 
-  IF rrule.byday IS NOT NULL AND NOT rrule.number_to_weekday(date_part('dow', after)::INT) = ANY ( rrule.byday ) THEN
+  IF rrule.byday IS NOT NULL AND NOT substring(to_char(after, 'DY') for 2 from 1) = ANY ( rrule.byday ) THEN
     RETURN;
   END IF;
 
@@ -132,7 +132,7 @@ BEGIN
     RETURN;
   END IF;
 
-  IF rrule.byday IS NOT NULL AND NOT rrule.number_to_weekday(date_part('dow', after)::INT) = ANY ( rrule.byday ) THEN
+  IF rrule.byday IS NOT NULL AND NOT substring(to_char(after, 'DY') for 2 from 1) = ANY ( rrule.byday ) THEN
     RETURN;
   END IF;
 
@@ -177,7 +177,7 @@ BEGIN
     RETURN;
   END IF;
 
-  IF rrule.byday IS NOT NULL AND NOT rrule.number_to_weekday(date_part('dow', after)::INT) = ANY ( rrule.byday ) THEN
+  IF rrule.byday IS NOT NULL AND NOT substring(to_char(after, 'DY') for 2 from 1) = ANY ( rrule.byday ) THEN
     RETURN;
   END IF;
 

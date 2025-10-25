@@ -14,6 +14,8 @@
  * 7. BYSETPOS rules
  * 8. Complex combinations
  * 9. Edge cases (leap years, month boundaries, DST)
+ * 10. Sub-day frequencies (HOURLY, MINUTELY, SECONDLY)
+ * 11. Extended interval testing
  *
  * Usage:
  *   psql -d your_database -f test_rrule_functions.sql
@@ -33,6 +35,10 @@ SET timezone = 'UTC';
 -- Create rrule schema
 CREATE SCHEMA IF NOT EXISTS rrule;
 SET search_path = rrule, public;
+
+-- Load the RRULE functions
+\i src/rrule.sql
+\i src/rrule_subday.sql
 
 -- Helper function to compare expected vs actual occurrences
 CREATE OR REPLACE FUNCTION assert_occurrences_equal(
@@ -419,6 +425,159 @@ INSERT INTO test_results VALUES (18, 'after() helper',
             '2025-01-01 10:00:00'::TIMESTAMP,
             '2025-01-01 12:00:00'::TIMESTAMP
         ) AS result
+    ) sub)
+);
+
+-- ============================================================================
+-- TEST GROUP 9: Sub-Day Frequencies
+-- ============================================================================
+
+\echo ''
+\echo '==================================================================='
+\echo 'TEST GROUP 9: Sub-Day Frequencies (HOURLY, MINUTELY, SECONDLY)'
+\echo '==================================================================='
+
+-- Test 19: HOURLY with BYDAY=MO (Monday only)
+INSERT INTO test_results VALUES (19, 'HOURLY with BYDAY=MO',
+    (SELECT CASE
+        WHEN array_length(result, 1) = 3
+             AND result[1] = '2025-01-06 10:00:00'::TIMESTAMP
+             AND result[2] = '2025-01-06 11:00:00'::TIMESTAMP
+             AND result[3] = '2025-01-06 12:00:00'::TIMESTAMP
+        THEN 'PASS [HOURLY with BYDAY=MO]'
+        ELSE 'FAIL [HOURLY with BYDAY=MO]: Expected 3 Monday hourly occurrences, got ' ||
+             COALESCE(array_length(result, 1), 0) || ' occurrences'
+    END
+    FROM (
+        SELECT array_agg(o ORDER BY o) AS result
+        FROM unnest(
+            (SELECT array_agg(occurrence) FROM "all"('FREQ=HOURLY;BYDAY=MO;COUNT=3', '2025-01-06 10:00:00'::TIMESTAMP)
+        ) o)
+    ) sub)
+);
+
+-- Test 20: MINUTELY with BYDAY=TU,WE,TH
+INSERT INTO test_results VALUES (20, 'MINUTELY with BYDAY=TU,WE,TH',
+    (SELECT CASE
+        WHEN array_length(result, 1) = 10
+             AND (SELECT COUNT(*) FROM unnest(result) AS o WHERE date_part('dow', o) IN (2,3,4)) = 10
+        THEN 'PASS [MINUTELY with BYDAY=TU,WE,TH]'
+        ELSE 'FAIL [MINUTELY with BYDAY=TU,WE,TH]: Expected 10 occurrences on Tue/Wed/Thu only'
+    END
+    FROM (
+        SELECT array_agg(o ORDER BY o) AS result
+        FROM unnest(
+            (SELECT array_agg(occurrence) FROM "all"('FREQ=MINUTELY;INTERVAL=30;BYDAY=TU,WE,TH;COUNT=10', '2025-01-07 09:00:00'::TIMESTAMP)
+        ) o)
+    ) sub)
+);
+
+-- Test 21: SECONDLY with BYDAY=FR (Friday only)
+INSERT INTO test_results VALUES (21, 'SECONDLY with BYDAY=FR',
+    (SELECT CASE
+        WHEN array_length(result, 1) = 5
+             AND (SELECT COUNT(*) FROM unnest(result) AS o WHERE date_part('dow', o) = 5) = 5
+        THEN 'PASS [SECONDLY with BYDAY=FR]'
+        ELSE 'FAIL [SECONDLY with BYDAY=FR]: Expected 5 occurrences on Friday only'
+    END
+    FROM (
+        SELECT array_agg(o ORDER BY o) AS result
+        FROM unnest(
+            (SELECT array_agg(occurrence) FROM "all"('FREQ=SECONDLY;INTERVAL=10;BYDAY=FR;COUNT=5', '2025-01-10 14:30:00'::TIMESTAMP)
+        ) o)
+    ) sub)
+);
+
+-- Test 22: HOURLY with BYDAY=MO,TU across week boundary
+INSERT INTO test_results VALUES (22, 'HOURLY BYDAY week boundary',
+    (SELECT CASE
+        WHEN array_length(result, 1) = 10
+             AND (SELECT COUNT(*) FROM unnest(result) AS o WHERE date_part('dow', o) IN (1,2)) = 10
+        THEN 'PASS [HOURLY BYDAY week boundary]'
+        ELSE 'FAIL [HOURLY BYDAY week boundary]: Expected 10 occurrences on Monday/Tuesday only'
+    END
+    FROM (
+        SELECT array_agg(o ORDER BY o) AS result
+        FROM unnest(
+            (SELECT array_agg(occurrence) FROM "all"('FREQ=HOURLY;INTERVAL=6;BYDAY=MO,TU;COUNT=10', '2025-01-06 08:00:00'::TIMESTAMP)
+        ) o)
+    ) sub)
+);
+
+-- ============================================================================
+-- TEST GROUP 10: Extended Interval Testing
+-- ============================================================================
+
+\echo ''
+\echo '==================================================================='
+\echo 'TEST GROUP 10: Extended Interval Testing'
+\echo '==================================================================='
+
+-- Test 23: DAILY with INTERVAL=7 (weekly pattern)
+INSERT INTO test_results VALUES (23, 'DAILY INTERVAL=7',
+    assert_occurrences_equal(
+        'DAILY INTERVAL=7',
+        ARRAY[
+            '2025-01-01 10:00:00'::TIMESTAMP,
+            '2025-01-08 10:00:00'::TIMESTAMP,
+            '2025-01-15 10:00:00'::TIMESTAMP,
+            '2025-01-22 10:00:00'::TIMESTAMP
+        ],
+        (SELECT array_agg(o ORDER BY o) FROM unnest(
+            (SELECT array_agg(occurrence) FROM "all"('FREQ=DAILY;INTERVAL=7;COUNT=4', '2025-01-01 10:00:00'::TIMESTAMP)
+        ) o)
+        ) AS occurrence
+    )
+);
+
+-- Test 24: MONTHLY with INTERVAL=3 (quarterly)
+INSERT INTO test_results VALUES (24, 'MONTHLY INTERVAL=3',
+    assert_occurrences_equal(
+        'MONTHLY INTERVAL=3',
+        ARRAY[
+            '2025-01-01 10:00:00'::TIMESTAMP,
+            '2025-04-01 10:00:00'::TIMESTAMP,
+            '2025-07-01 10:00:00'::TIMESTAMP,
+            '2025-10-01 10:00:00'::TIMESTAMP
+        ],
+        (SELECT array_agg(o ORDER BY o) FROM unnest(
+            (SELECT array_agg(occurrence) FROM "all"('FREQ=MONTHLY;INTERVAL=3;COUNT=4', '2025-01-01 10:00:00'::TIMESTAMP)
+        ) o)
+        ) AS occurrence
+    )
+);
+
+-- Test 25: YEARLY with INTERVAL=2 (biennial)
+INSERT INTO test_results VALUES (25, 'YEARLY INTERVAL=2',
+    assert_occurrences_equal(
+        'YEARLY INTERVAL=2',
+        ARRAY[
+            '2025-01-01 10:00:00'::TIMESTAMP,
+            '2027-01-01 10:00:00'::TIMESTAMP,
+            '2029-01-01 10:00:00'::TIMESTAMP
+        ],
+        (SELECT array_agg(o ORDER BY o) FROM unnest(
+            (SELECT array_agg(occurrence) FROM "all"('FREQ=YEARLY;INTERVAL=2;COUNT=3', '2025-01-01 10:00:00'::TIMESTAMP)
+        ) o)
+        ) AS occurrence
+    )
+);
+
+-- Test 26: Complex DAILY INTERVAL with BYDAY filter
+INSERT INTO test_results VALUES (26, 'DAILY INTERVAL=14 BYDAY=MO',
+    (SELECT CASE
+        WHEN array_length(result, 1) = 3
+             AND (SELECT COUNT(*) FROM unnest(result) AS o WHERE date_part('dow', o) = 1) = 3
+             AND result[2] - result[1] = INTERVAL '14 days'
+             AND result[3] - result[2] = INTERVAL '14 days'
+        THEN 'PASS [DAILY INTERVAL=14 BYDAY=MO]'
+        ELSE 'FAIL [DAILY INTERVAL=14 BYDAY=MO]: Expected 3 Mondays 14 days apart'
+    END
+    FROM (
+        SELECT array_agg(o ORDER BY o) AS result
+        FROM unnest(
+            (SELECT array_agg(occurrence) FROM "all"('FREQ=DAILY;INTERVAL=14;BYDAY=MO;COUNT=3', '2025-01-06 10:00:00'::TIMESTAMP)
+        ) o)
     ) sub)
 );
 

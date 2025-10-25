@@ -750,9 +750,9 @@ $$ LANGUAGE plpgsql IMMUTABLE;
 ------------------------------------------------------------------------------------------------------
 -- Given a cursor into a set, process the set returning the subset matching the BYSETPOS
 --
--- Note that this function *requires* PostgreSQL 8.3 or later for the cursor handling syntax
--- to work.  I guess we could do it with an array, instead, for compatibility with earlier
--- releases, since there's a maximum of 366 positions in a set.
+-- Requires: PostgreSQL 12+ for cursor handling syntax and other modern SQL features.
+-- (Cursors with SCROLL support have been stable since PostgreSQL 8.3, but this implementation
+-- uses additional features requiring PostgreSQL 12 or later.)
 ------------------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION rrule_bysetpos_filter( REFCURSOR, INT[] ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
 DECLARE
@@ -1527,7 +1527,7 @@ BEGIN
           loopcount := loopcount + 1;
           EXIT WHEN loopcount >= loopmax;
       END LOOP;
-      current_base := current_base + (rrule.interval::text || ' days')::interval;
+      current_base := current_base + make_interval(days => rrule.interval);
     ELSIF rrule.freq = 'WEEKLY' THEN
       FOR current IN SELECT w FROM rrule.weekly_set(current_base, rrule,
                                                       CASE WHEN rrule.bysetpos IS NULL
@@ -1545,7 +1545,7 @@ BEGIN
           EXIT WHEN loopcount >= loopmax;
         END IF;
       END LOOP;
-      current_base := current_base + (rrule.interval::text || ' weeks')::interval;
+      current_base := current_base + make_interval(weeks => rrule.interval);
     ELSIF rrule.freq = 'MONTHLY' THEN
       FOR current IN SELECT m FROM rrule.monthly_set(current_base, rrule,
                                                        CASE WHEN rrule.bysetpos IS NULL
@@ -1558,7 +1558,7 @@ BEGIN
           loopcount := loopcount + 1;
           EXIT WHEN loopcount >= loopmax;
       END LOOP;
-      current_base := current_base + (rrule.interval::text || ' months')::interval;
+      current_base := current_base + make_interval(months => rrule.interval);
     ELSIF rrule.freq = 'YEARLY' THEN
       FOR current IN SELECT y FROM rrule.yearly_set(current_base, rrule,
                                                       CASE WHEN rrule.bysetpos IS NULL
@@ -1571,7 +1571,7 @@ BEGIN
         loopcount := loopcount + 1;
         EXIT WHEN loopcount >= loopmax;
       END LOOP;
-      current_base := current_base + (rrule.interval::text || ' years')::interval;
+      current_base := current_base + make_interval(years => rrule.interval);
 
     -- ⚠️ SUB-DAY FREQUENCIES NOT AVAILABLE IN STANDARD INSTALLATION
     --
@@ -2138,7 +2138,7 @@ BEGIN
                 EXIT WHEN loopcount >= loopmax;
             END LOOP;
             -- KEY FIX: Adding interval to naive TIMESTAMP preserves wall-clock time
-            current_base := current_base + (rrule.interval::text || ' days')::interval;
+            current_base := current_base + make_interval(days => rrule.interval);
 
         ELSIF rrule.freq = 'WEEKLY' THEN
             FOR current IN
@@ -2159,7 +2159,7 @@ BEGIN
                     EXIT WHEN loopcount >= loopmax;
                 END IF;
             END LOOP;
-            current_base := current_base + (rrule.interval::text || ' weeks')::interval;
+            current_base := current_base + make_interval(weeks => rrule.interval);
 
         ELSIF rrule.freq = 'MONTHLY' THEN
             FOR current IN
@@ -2174,7 +2174,7 @@ BEGIN
                 loopcount := loopcount + 1;
                 EXIT WHEN loopcount >= loopmax;
             END LOOP;
-            current_base := current_base + (rrule.interval::text || ' months')::interval;
+            current_base := current_base + make_interval(months => rrule.interval);
 
         ELSIF rrule.freq = 'YEARLY' THEN
             FOR current IN
@@ -2189,7 +2189,7 @@ BEGIN
                 loopcount := loopcount + 1;
                 EXIT WHEN loopcount >= loopmax;
             END LOOP;
-            current_base := current_base + (rrule.interval::text || ' years')::interval;
+            current_base := current_base + make_interval(years => rrule.interval);
 
         ELSE
             RAISE EXCEPTION 'Unsupported frequency: %', rrule.freq;
