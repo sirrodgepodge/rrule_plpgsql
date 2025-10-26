@@ -73,9 +73,23 @@ DECLARE
   repeatrule ALIAS FOR $2;
   result rrule.rrule_parts%ROWTYPE;
   tempstr TEXT;
+  until_str TEXT;
 BEGIN
   result.base       := basedate;
-  result.until      := substring(repeatrule from 'UNTIL=([0-9TZ]+)(;|$)');
+  until_str         := substring(repeatrule from 'UNTIL=([0-9TZ]+)(;|$)');
+
+  -- Validate and assign UNTIL with helpful error message
+  IF until_str IS NOT NULL THEN
+    BEGIN
+      result.until := until_str::TIMESTAMPTZ;
+    EXCEPTION
+      WHEN OTHERS THEN
+        RAISE EXCEPTION 'Invalid RRULE: UNTIL=% is not a valid timestamp. RFC 5545 requires format YYYYMMDDTHHMMSSZ (e.g., UNTIL=20251231T235959Z) or YYYYMMDD (e.g., UNTIL=20251231). Error: %',
+          until_str,
+          SQLERRM;
+    END;
+  END IF;
+
   result.freq       := substring(repeatrule from 'FREQ=([A-Z]+)(;|$)');
   result.count      := substring(repeatrule from 'COUNT=([0-9]+)(;|$)');
   result.interval   := COALESCE(substring(repeatrule from 'INTERVAL=([0-9]+)(;|$)')::int, 1);
@@ -1398,17 +1412,30 @@ BEGIN
   IF rrule.count IS NOT NULL THEN
     loopmax := rrule.count;
   ELSE
-    -- max_count is pretty arbitrary, so we scale it somewhat here depending on the frequency.
+    -- Calculate iteration limit based on frequency to handle sparse BYxxx filters
+    --
+    -- Without COUNT/UNTIL, we must iterate until we find max_count matching occurrences.
+    -- But BYxxx filters can be sparse (e.g., FREQ=DAILY;BYDAY=MO only matches 1/7 days),
+    -- so we need to iterate multiple base periods to find enough matching occurrences.
+    --
+    -- Multipliers are conservative worst-case estimates:
     IF rrule.freq = 'DAILY' THEN
+      -- 20x: FREQ=DAILY;BYDAY=MO;BYSETPOS=-1 needs ~4 weeks (28 days) to find 1 occurrence
+      -- Worst case: daily frequency with weekly-sparse filters + BYSETPOS
       loopmax := max_count * 20;
     ELSIF rrule.freq = 'WEEKLY' THEN
+      -- 10x: FREQ=WEEKLY;BYMONTH=12 needs ~10 weeks to find 1 occurrence
+      -- Worst case: weekly frequency with monthly-sparse filters + BYSETPOS
       loopmax := max_count * 10;
     ELSIF rrule.freq = 'HOURLY' THEN
-      loopmax := max_count * 2;  -- 2x multiplier for hourly (24 hours/day baseline)
+      -- 2x: FREQ=HOURLY;BYHOUR=9,17 matches 2/24 hours = ~12 iterations per match
+      loopmax := max_count * 2;
     ELSIF rrule.freq = 'MINUTELY' THEN
-      loopmax := LEAST(max_count, 1440);  -- Hard cap: max 1 day of minutes
+      -- Hard cap: Never iterate more than 1 day worth of minutes (DoS protection)
+      loopmax := LEAST(max_count, 1440);
     ELSIF rrule.freq = 'SECONDLY' THEN
-      loopmax := LEAST(max_count, 3600);  -- Hard cap: max 1 hour of seconds
+      -- Hard cap: Never iterate more than 1 hour worth of seconds (DoS protection)
+      loopmax := LEAST(max_count, 3600);
     ELSE
       loopmax := max_count;
     END IF;
@@ -1500,123 +1527,8 @@ BEGIN
     END IF;
     EXIT WHEN rrule.until IS NOT NULL AND current > rrule.until;
   END LOOP;
-  -- RETURN QUERY;
 END;
 $$ LANGUAGE plpgsql IMMUTABLE STRICT;
-
-
-------------------------------------------------------------------------------------------------------
--- A simplified DTSTART/RRULE only interface which applies some performance assumptions
-------------------------------------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION event_instances( TIMESTAMP WITH TIME ZONE, TEXT )
-                                         RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
-DECLARE
-  basedate ALIAS FOR $1;
-  repeatrule ALIAS FOR $2;
-  maxdate TIMESTAMP WITH TIME ZONE;
-BEGIN
-  maxdate := current_date + '10 years'::interval;
-  RETURN QUERY SELECT d FROM rrule.rrule_event_instances_range( basedate, repeatrule, basedate, maxdate, 300 ) d;
-END;
-$$ LANGUAGE plpgsql IMMUTABLE STRICT;
-
-
-------------------------------------------------------------------------------------------------------
--- In most cases we just want to know if there *is* an event overlapping the range, so we have a
--- specific function for that.  Note that this is *not* strict, and can be called with NULLs.
-------------------------------------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION rrule_event_overlaps( TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE, TEXT, TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE )
-                                         RETURNS BOOLEAN AS $$
-DECLARE
-  dtstart ALIAS FOR $1;
-  dtend ALIAS FOR $2;
-  repeatrule ALIAS FOR $3;
-  in_mindate ALIAS FOR $4;
-  in_maxdate ALIAS FOR $5;
-  base_date TIMESTAMP WITH TIME ZONE;
-  mindate TIMESTAMP WITH TIME ZONE;
-  maxdate TIMESTAMP WITH TIME ZONE;
-BEGIN
-
-  IF dtstart IS NULL THEN
-    RETURN NULL;
-  END IF;
-  IF dtend IS NULL THEN
-    base_date := dtstart;
-  ELSE
-    base_date := dtend;
-  END IF;
-
-  IF in_mindate IS NULL THEN
-    mindate := current_date - '10 years'::interval;
-  ELSE
-    mindate := in_mindate;
-  END IF;
-
-  IF in_maxdate IS NULL THEN
-    maxdate := current_date + '10 years'::interval;
-  ELSE
-    -- If we add the duration onto the event, then an overlap occurs if dtend <= increased end of range.
-    maxdate := in_maxdate + (base_date - dtstart);
-  END IF;
-
-  IF repeatrule IS NULL THEN
-    RETURN (dtstart < maxdate AND base_date >= mindate);
-  END IF;
-
-  SELECT d INTO mindate FROM rrule.rrule_event_instances_range( base_date, repeatrule, mindate, maxdate, 60 ) d LIMIT 1;
-  RETURN FOUND;
-
-END;
-$$ LANGUAGE plpgsql IMMUTABLE;
-
-
--- Create a composite type for the parts of the RRULE.
-CREATE TYPE rrule_instance AS (
-  dtstart TIMESTAMP WITH TIME ZONE,
-  rrule TEXT,
-  instance TIMESTAMP WITH TIME ZONE
-);
-
-CREATE OR REPLACE FUNCTION rrule_event_instances( TIMESTAMP WITH TIME ZONE, TEXT )
-                                         RETURNS SETOF rrule.rrule_instance AS $$
-DECLARE
-  basedate ALIAS FOR $1;
-  repeatrule ALIAS FOR $2;
-  maxdate TIMESTAMP WITH TIME ZONE;
-  current TIMESTAMP WITH TIME ZONE;
-  result rrule.rrule_instance%ROWTYPE;
-BEGIN
-  maxdate := current_date + '10 years'::interval;
-
-  result.dtstart := basedate;
-  result.rrule   := repeatrule;
-
-  FOR current IN SELECT d FROM rrule.rrule_event_instances_range( basedate, repeatrule, basedate, maxdate, 300 ) d LOOP
-    result.instance := current;
-    RETURN NEXT result;
-  END LOOP;
-
-END;
-$$ LANGUAGE plpgsql IMMUTABLE STRICT;
-
-
-------------------------------------------------------------------------------------------------------
--- INTERNAL UTILITY: Convert iCalendar duration format to PostgreSQL interval
-------------------------------------------------------------------------------------------------------
--- This is an internal utility function for parsing iCalendar DURATION format (RFC 5545 Section 3.3.6).
--- Example: 'P1DT12H' → '1 day 12 hours'::interval
---
--- NOTE: This function is not part of the stable public API and may change in future versions.
--- It exists for advanced users who need to work with iCalendar duration strings.
---
--- For most use cases, use PostgreSQL's native interval syntax instead:
---   '1 day 12 hours'::interval  (preferred)
---   icalendar_interval_to_SQL('P1DT12H')  (for iCalendar compatibility only)
-------------------------------------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION icalendar_interval_to_SQL( TEXT ) RETURNS interval AS $function$
-  SELECT CASE WHEN substring($1,1,1) = '-' THEN -1 ELSE 1 END * regexp_replace( regexp_replace($1, '[PT-]', '', 'g'), '([A-Z])', E'\\1 ', 'g')::interval;
-$function$ LANGUAGE sql IMMUTABLE STRICT;
 
 
 ------------------------------------------------------------------------------------------------------
