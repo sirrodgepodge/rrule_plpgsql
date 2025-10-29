@@ -93,6 +93,124 @@ This package exports raw SQL strings for PostgreSQL. While this approach is tran
 
 ---
 
+## Application Security: Preventing SQL Injection
+
+### CRITICAL: Always Use Parameterized Queries
+
+While the RRULE functions themselves are safe (they use parameterized queries internally), **your application code MUST also use parameterized queries** when calling these functions with user input.
+
+#### ✅ SAFE: Parameterized Queries
+
+```typescript
+// ✅ node-postgres (pg)
+await client.query(
+  'SELECT * FROM rrule.all($1, $2)',
+  [userRRule, dtstart]
+);
+
+// ✅ TypeORM
+await connection.query(
+  'SELECT * FROM rrule.all($1, $2)',
+  [userRRule, dtstart]
+);
+
+// ✅ Prisma
+await prisma.$queryRawUnsafe(
+  'SELECT * FROM rrule.all($1, $2)',
+  userRRule,
+  dtstart
+);
+
+// ✅ Knex
+await knex.raw(
+  'SELECT * FROM rrule.all(?, ?)',
+  [userRRule, dtstart]
+);
+```
+
+#### ❌ UNSAFE: String Interpolation (SQL Injection Risk)
+
+```typescript
+// ❌ DANGEROUS - DO NOT DO THIS
+await client.query(
+  `SELECT * FROM rrule.all('${userRRule}', '${dtstart}')`
+);
+
+// ❌ DANGEROUS - Template literals are NOT safe
+await client.query(`
+  SELECT * FROM rrule.all('${req.body.rrule}', '${req.body.date}')
+`);
+
+// ❌ DANGEROUS - String concatenation
+await client.query(
+  "SELECT * FROM rrule.all('" + userRRule + "', '" + dtstart + "')"
+);
+```
+
+### Why This Matters
+
+**Attack Scenario:**
+```typescript
+// Attacker sends malicious RRULE:
+const userRRule = "FREQ=DAILY'); DROP TABLE users; --";
+
+// With string interpolation (UNSAFE):
+await client.query(
+  `SELECT * FROM rrule.all('${userRRule}', '2025-01-01')`
+);
+// Becomes: SELECT * FROM rrule.all('FREQ=DAILY'); DROP TABLE users; --', '2025-01-01')
+// ^ This executes DROP TABLE!
+
+// With parameterized query (SAFE):
+await client.query(
+  'SELECT * FROM rrule.all($1, $2)',
+  [userRRule, '2025-01-01']
+);
+// The RRULE string is properly escaped - attack prevented!
+```
+
+### Input Validation Best Practices
+
+In addition to using parameterized queries, validate RRULE strings:
+
+```typescript
+// Example validation function
+function validateRRule(rrule: string): void {
+  // 1. Check length
+  if (rrule.length > 500) {
+    throw new Error('RRULE too long');
+  }
+
+  // 2. Validate format (basic check)
+  if (!rrule.match(/^[A-Z0-9=;:,+-]+$/)) {
+    throw new Error('Invalid RRULE format');
+  }
+
+  // 3. Check for required FREQ parameter
+  if (!rrule.includes('FREQ=')) {
+    throw new Error('RRULE must include FREQ parameter');
+  }
+
+  // 4. Validate against PostgreSQL (will throw if invalid)
+  await client.query(
+    'SELECT rrule.parse_rrule_parts($1::TIMESTAMPTZ, $2)',
+    [new Date(), rrule]
+  );
+}
+```
+
+### Security Checklist for Applications
+
+- [ ] Use parameterized queries (bind parameters) for ALL user input
+- [ ] Never use string interpolation or concatenation with user input
+- [ ] Validate RRULE strings before passing to database
+- [ ] Limit RRULE string length (recommend max 500 characters)
+- [ ] Use Content Security Policy (CSP) headers
+- [ ] Log failed validation attempts for monitoring
+- [ ] Apply rate limiting to prevent DoS via complex RRULEs
+
+---
+
 ## Database Security
 
 ### Principle of Least Privilege

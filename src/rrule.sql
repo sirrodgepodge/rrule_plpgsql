@@ -72,7 +72,6 @@ DECLARE
   basedate   ALIAS FOR $1;
   repeatrule ALIAS FOR $2;
   result rrule.rrule_parts%ROWTYPE;
-  tempstr TEXT;
   until_str TEXT;
 BEGIN
   result.base       := basedate;
@@ -696,6 +695,44 @@ $$ LANGUAGE plpgsql IMMUTABLE;
 
 
 ------------------------------------------------------------------------------------------------------
+-- Timezone Validation Helper
+------------------------------------------------------------------------------------------------------
+--
+-- Validates that a timezone string is a valid IANA timezone identifier.
+-- Raises an exception if the timezone is invalid.
+-- Does nothing if timezone is NULL (allowing optional timezone parameters).
+--
+-- This function centralizes timezone validation logic that was previously duplicated
+-- across multiple public API functions.
+--
+-- Parameters:
+--   tz - Timezone string (e.g., 'America/New_York', 'Europe/London', 'UTC')
+--
+-- Returns: VOID (raises exception on invalid timezone)
+--
+-- Example:
+--   PERFORM rrule.validate_timezone('America/New_York');  -- Success
+--   PERFORM rrule.validate_timezone('Invalid/Zone');      -- Raises exception
+--   PERFORM rrule.validate_timezone(NULL);                -- Success (NULL is allowed)
+--
+------------------------------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION validate_timezone(tz TEXT)
+RETURNS VOID AS $$
+BEGIN
+  -- NULL is allowed (indicates optional timezone parameter)
+  IF tz IS NULL THEN
+    RETURN;
+  END IF;
+
+  -- Check if timezone exists in PostgreSQL's timezone database
+  IF tz NOT IN (SELECT name FROM pg_timezone_names) THEN
+    RAISE EXCEPTION 'Invalid timezone: "%". Must be a valid IANA timezone identifier (e.g., America/New_York, Europe/London, Asia/Tokyo, UTC). Use: SELECT name FROM pg_timezone_names ORDER BY name; to see all valid timezones.', tz;
+  END IF;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+
+------------------------------------------------------------------------------------------------------
 -- Test the weekday of this date against the array of weekdays from the BYDAY rule (FREQ=WEEKLY or less)
 ------------------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION test_byday_rule( TIMESTAMP WITH TIME ZONE, TEXT[] ) RETURNS BOOLEAN AS $$
@@ -759,6 +796,85 @@ BEGIN
   RETURN TRUE;
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;
+
+
+------------------------------------------------------------------------------------------------------
+-- Calculate safe iteration limit to prevent infinite loops with sparse BYxxx filters
+--
+-- SECURITY-CRITICAL: These multipliers prevent denial-of-service attacks when RRULEs
+-- contain sparse filters like BYDAY=MO (matches 1/7 days) combined with BYSETPOS.
+-- Without proper limits, the database could iterate millions of times searching for
+-- occurrences that rarely match.
+--
+-- MULTIPLIER RATIONALE (based on mathematical worst-case analysis):
+--
+--   DAILY × 20:   FREQ=DAILY;BYDAY=MO;BYSETPOS=-1 requires ~4 weeks (28 days)
+--                 to find 1 occurrence (last Monday of month). With monthly-sparse
+--                 filters, we need 20x headroom to guarantee finding matches.
+--
+--   WEEKLY × 10:  FREQ=WEEKLY;BYMONTH=12 requires ~10 weeks to find 1 occurrence
+--                 (only weeks in December match). Monthly filters on weekly frequency
+--                 create extreme sparsity.
+--
+--   HOURLY × 2:   FREQ=HOURLY;BYHOUR=9,17 matches 2/24 hours, requiring ~12 hours
+--                 per match. Factor of 2x provides adequate headroom.
+--
+--   MINUTELY cap: Hard limit at 1440 (1 day) regardless of requested_max.
+--                 DoS protection: prevents generating millions of minute-level occurrences.
+--
+--   SECONDLY cap: Hard limit at 3600 (1 hour) regardless of requested_max.
+--                 DoS protection: prevents generating tens of millions of second-level occurrences.
+--
+-- SECURITY: DO NOT increase these multipliers without thorough security review and testing.
+-- Increasing limits could enable resource exhaustion attacks in multi-tenant environments.
+--
+-- PRECEDENCE: If rrule_count is specified (COUNT in RRULE), it takes absolute precedence
+-- over all multipliers. The RRULE author's explicit COUNT is always honored.
+--
+-- Parameters:
+--   frequency      - FREQ value from RRULE (DAILY, WEEKLY, MONTHLY, YEARLY, HOURLY, MINUTELY, SECONDLY)
+--   rrule_count    - COUNT parameter from RRULE, or NULL if not specified
+--   requested_max  - Maximum occurrences requested by API caller
+--
+-- Returns:
+--   Safe iteration limit that balances:
+--     1. Finding enough matches even with sparse filters (multipliers)
+--     2. Preventing resource exhaustion (DoS caps)
+--     3. Respecting RRULE author's explicit COUNT (precedence)
+--
+-- Examples:
+--   calculate_safe_iteration_limit('DAILY', NULL, 100)    → 2000  (100 × 20)
+--   calculate_safe_iteration_limit('WEEKLY', NULL, 50)    → 500   (50 × 10)
+--   calculate_safe_iteration_limit('MINUTELY', NULL, 5000) → 1440  (DoS cap)
+--   calculate_safe_iteration_limit('DAILY', 75, 100)      → 75    (COUNT wins)
+------------------------------------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION calculate_safe_iteration_limit(
+  frequency TEXT,
+  rrule_count INT,
+  requested_max INT
+) RETURNS INT AS $$
+BEGIN
+  -- RRULE COUNT parameter always takes absolute precedence
+  -- (author's explicit intent overrides all safety multipliers)
+  IF rrule_count IS NOT NULL THEN
+    RETURN rrule_count;
+  END IF;
+
+  -- Apply frequency-specific safety multipliers for sparse filter protection
+  RETURN CASE frequency
+    WHEN 'DAILY'    THEN requested_max * 20   -- Sparse: weekly-pattern filters
+    WHEN 'WEEKLY'   THEN requested_max * 10   -- Sparse: monthly-pattern filters
+    WHEN 'HOURLY'   THEN requested_max * 2    -- Moderate: time-of-day filters
+    WHEN 'MINUTELY' THEN LEAST(requested_max, 1440)  -- DoS protection: max 1 day
+    WHEN 'SECONDLY' THEN LEAST(requested_max, 3600)  -- DoS protection: max 1 hour
+    ELSE requested_max                         -- MONTHLY, YEARLY: no multiplier needed
+  END;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+-- PostgreSQL metadata: Documents this function's purpose for introspection
+COMMENT ON FUNCTION calculate_safe_iteration_limit IS
+'Security-critical function: Calculates safe iteration limits for RRULE generation accounting for sparse BYxxx filters and DoS protection. See function header for detailed security rationale and multiplier derivation.';
 
 
 ------------------------------------------------------------------------------------------------------
@@ -1409,37 +1525,10 @@ BEGIN
 
   SELECT * INTO rrule FROM rrule.parse_rrule_parts( basedate, repeatrule );
 
-  IF rrule.count IS NOT NULL THEN
-    loopmax := rrule.count;
-  ELSE
-    -- Calculate iteration limit based on frequency to handle sparse BYxxx filters
-    --
-    -- Without COUNT/UNTIL, we must iterate until we find max_count matching occurrences.
-    -- But BYxxx filters can be sparse (e.g., FREQ=DAILY;BYDAY=MO only matches 1/7 days),
-    -- so we need to iterate multiple base periods to find enough matching occurrences.
-    --
-    -- Multipliers are conservative worst-case estimates:
-    IF rrule.freq = 'DAILY' THEN
-      -- 20x: FREQ=DAILY;BYDAY=MO;BYSETPOS=-1 needs ~4 weeks (28 days) to find 1 occurrence
-      -- Worst case: daily frequency with weekly-sparse filters + BYSETPOS
-      loopmax := max_count * 20;
-    ELSIF rrule.freq = 'WEEKLY' THEN
-      -- 10x: FREQ=WEEKLY;BYMONTH=12 needs ~10 weeks to find 1 occurrence
-      -- Worst case: weekly frequency with monthly-sparse filters + BYSETPOS
-      loopmax := max_count * 10;
-    ELSIF rrule.freq = 'HOURLY' THEN
-      -- 2x: FREQ=HOURLY;BYHOUR=9,17 matches 2/24 hours = ~12 iterations per match
-      loopmax := max_count * 2;
-    ELSIF rrule.freq = 'MINUTELY' THEN
-      -- Hard cap: Never iterate more than 1 day worth of minutes (DoS protection)
-      loopmax := LEAST(max_count, 1440);
-    ELSIF rrule.freq = 'SECONDLY' THEN
-      -- Hard cap: Never iterate more than 1 hour worth of seconds (DoS protection)
-      loopmax := LEAST(max_count, 3600);
-    ELSE
-      loopmax := max_count;
-    END IF;
-  END IF;
+  -- Security: Calculate safe iteration limit accounting for sparse BYxxx filters
+  -- (e.g., FREQ=DAILY;BYDAY=MO only matches 1/7 days, requiring 20x headroom)
+  -- See calculate_safe_iteration_limit() for detailed security rationale.
+  loopmax := rrule.calculate_safe_iteration_limit(rrule.freq, rrule.count, max_count);
 
   current_base := basedate;
   base_day := date_trunc('day',basedate);
@@ -1519,11 +1608,10 @@ BEGIN
     ELSE
       -- Provide helpful error message for sub-day frequencies
       IF rrule.freq IN ('HOURLY', 'MINUTELY', 'SECONDLY') THEN
-        RAISE NOTICE 'Frequency "%" is not supported in standard installation.  Sub-day frequencies (HOURLY, MINUTELY, SECONDLY) are disabled by default for security.  To enable them, use: psql -d your_database -f src/install_with_subday.sql  See INCLUDING_SUBDAY_OPERATIONS.md for security considerations.', rrule.freq;
+        RAISE EXCEPTION 'Frequency "%" is not supported in standard installation. Sub-day frequencies (HOURLY, MINUTELY, SECONDLY) are disabled by default for security. To enable them, use: psql -d your_database -f src/install_with_subday.sql. See INCLUDING_SUBDAY_OPERATIONS.md for security considerations.', rrule.freq;
       ELSE
-        RAISE NOTICE 'A frequency of "%" is not handled', rrule.freq;
+        RAISE EXCEPTION 'Unsupported frequency: %. Valid values are: DAILY, WEEKLY, MONTHLY, YEARLY. For sub-day frequencies, see INCLUDING_SUBDAY_OPERATIONS.md', rrule.freq;
       END IF;
-      RETURN;
     END IF;
     EXIT WHEN rrule.until IS NOT NULL AND current > rrule.until;
   END LOOP;
@@ -1587,16 +1675,8 @@ BEGIN
     -- Extract TZID from rrule string
     tzid := substring(rrule_string from 'TZID=([^;]+)(;|$)');
 
-    -- Validate TZID if provided
-    IF tzid IS NOT NULL THEN
-        BEGIN
-            -- Test if timezone is valid by attempting a conversion
-            PERFORM dtstart AT TIME ZONE tzid;
-        EXCEPTION
-            WHEN invalid_parameter_value THEN
-                RAISE EXCEPTION 'Invalid TZID parameter: "%". Must be a valid IANA timezone (e.g., America/New_York, Europe/London, Asia/Tokyo)', tzid;
-        END;
-    END IF;
+    -- Validate TZID if provided (using centralized validation helper)
+    PERFORM rrule.validate_timezone(tzid);
 
     -- CRITICAL: For TZID support, we generate occurrences in naive TIMESTAMP space
     -- treating it as UTC, then the naive timestamps are interpreted as wall-clock times
@@ -1655,15 +1735,8 @@ BEGIN
     -- Extract TZID from rrule string
     tzid := substring(rrule_string from 'TZID=([^;]+)(;|$)');
 
-    -- Validate TZID if provided
-    IF tzid IS NOT NULL THEN
-        BEGIN
-            PERFORM dtstart AT TIME ZONE tzid;
-        EXCEPTION
-            WHEN invalid_parameter_value THEN
-                RAISE EXCEPTION 'Invalid TZID parameter: "%". Must be a valid IANA timezone (e.g., America/New_York, Europe/London, Asia/Tokyo)', tzid;
-        END;
-    END IF;
+    -- Validate TZID if provided (using centralized validation helper)
+    PERFORM rrule.validate_timezone(tzid);
 
     -- Generate in naive TIMESTAMP space (see all() function for explanation)
     dtstart_utc := dtstart AT TIME ZONE 'UTC';
@@ -1707,7 +1780,7 @@ BEGIN
     -- Get next occurrence using all() and filter
     -- TZID handling is done automatically by all()
     SELECT occurrence INTO next_occurrence
-    FROM "all"(rrule_string, dtstart) AS occurrence
+    FROM rrule.all(rrule_string, dtstart) AS occurrence
     WHERE occurrence > after_date
     ORDER BY occurrence ASC
     LIMIT 1;
@@ -1740,7 +1813,7 @@ BEGIN
     -- Get previous occurrence using all() and filter
     -- TZID handling is done automatically by all()
     SELECT occurrence INTO previous_occurrence
-    FROM "all"(rrule_string, dtstart) AS occurrence
+    FROM rrule.all(rrule_string, dtstart) AS occurrence
     WHERE occurrence < before_date
     ORDER BY occurrence DESC
     LIMIT 1;
@@ -1770,7 +1843,7 @@ DECLARE
     occurrence_count INTEGER;
 BEGIN
     SELECT COUNT(*)::INTEGER INTO occurrence_count
-    FROM "all"(rrule_string, dtstart);
+    FROM rrule.all(rrule_string, dtstart);
 
     RETURN occurrence_count;
 END;
@@ -1927,24 +2000,10 @@ BEGIN
     -- Parse the RRULE (note: basedate is converted to TIMESTAMPTZ for parsing, but only for date extraction)
     SELECT * INTO rrule FROM rrule.parse_rrule_parts( basedate::TIMESTAMPTZ, repeatrule );
 
-    IF rrule.count IS NOT NULL THEN
-        loopmax := rrule.count;
-    ELSE
-        -- max_count is pretty arbitrary, so we scale it somewhat here depending on the frequency.
-        IF rrule.freq = 'DAILY' THEN
-            loopmax := max_count * 20;
-        ELSIF rrule.freq = 'WEEKLY' THEN
-            loopmax := max_count * 10;
-        ELSIF rrule.freq = 'HOURLY' THEN
-            loopmax := max_count * 2;
-        ELSIF rrule.freq = 'MINUTELY' THEN
-            loopmax := LEAST(max_count, 1440);
-        ELSIF rrule.freq = 'SECONDLY' THEN
-            loopmax := LEAST(max_count, 3600);
-        ELSE
-            loopmax := max_count;
-        END IF;
-    END IF;
+    -- Security: Calculate safe iteration limit accounting for sparse BYxxx filters
+    -- (e.g., FREQ=DAILY;BYDAY=MO only matches 1/7 days, requiring 20x headroom)
+    -- See calculate_safe_iteration_limit() for detailed security rationale.
+    loopmax := rrule.calculate_safe_iteration_limit(rrule.freq, rrule.count, max_count);
 
     current_base := basedate;
     base_day := date_trunc('day', basedate);
@@ -2069,10 +2128,8 @@ BEGIN
         'UTC'
     );
 
-    -- Validate timezone
-    IF tz_name NOT IN (SELECT name FROM pg_timezone_names) THEN
-        RAISE EXCEPTION 'Invalid timezone: %. Must be a valid PostgreSQL timezone name (e.g., ''America/New_York'')', tz_name;
-    END IF;
+    -- Validate timezone (using centralized validation helper)
+    PERFORM rrule.validate_timezone(tz_name);
 
     -- Convert TIMESTAMPTZ to wall-clock time in target timezone
     wall_clock_start := dtstart AT TIME ZONE tz_name;
@@ -2122,10 +2179,8 @@ BEGIN
         'UTC'
     );
 
-    -- Validate timezone
-    IF tz_name NOT IN (SELECT name FROM pg_timezone_names) THEN
-        RAISE EXCEPTION 'Invalid timezone: %. Must be a valid PostgreSQL timezone name', tz_name;
-    END IF;
+    -- Validate timezone (using centralized validation helper)
+    PERFORM rrule.validate_timezone(tz_name);
 
     -- Convert all timestamps to wall-clock time in target timezone
     wall_clock_start := dtstart AT TIME ZONE tz_name;
@@ -2174,10 +2229,8 @@ BEGIN
         'UTC'
     );
 
-    -- Validate timezone
-    IF tz_name NOT IN (SELECT name FROM pg_timezone_names) THEN
-        RAISE EXCEPTION 'Invalid timezone: %. Must be a valid PostgreSQL timezone name', tz_name;
-    END IF;
+    -- Validate timezone (using centralized validation helper)
+    PERFORM rrule.validate_timezone(tz_name);
 
     -- Convert to wall-clock time
     wall_clock_start := dtstart AT TIME ZONE tz_name;
@@ -2229,10 +2282,8 @@ BEGIN
         'UTC'
     );
 
-    -- Validate timezone
-    IF tz_name NOT IN (SELECT name FROM pg_timezone_names) THEN
-        RAISE EXCEPTION 'Invalid timezone: %. Must be a valid PostgreSQL timezone name', tz_name;
-    END IF;
+    -- Validate timezone (using centralized validation helper)
+    PERFORM rrule.validate_timezone(tz_name);
 
     -- Convert to wall-clock time
     wall_clock_start := dtstart AT TIME ZONE tz_name;
@@ -2378,10 +2429,8 @@ BEGIN
         'UTC'
     );
 
-    -- Validate timezone
-    IF tz_name NOT IN (SELECT name FROM pg_timezone_names) THEN
-        RAISE EXCEPTION 'Invalid timezone: %. Must be a valid PostgreSQL timezone name', tz_name;
-    END IF;
+    -- Validate timezone (using centralized validation helper)
+    PERFORM rrule.validate_timezone(tz_name);
 
     -- Determine base date (end time if available, otherwise start time)
     IF dtend IS NULL THEN

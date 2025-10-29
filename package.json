@@ -10,7 +10,8 @@
     "index.js",
     "index.d.ts",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHECKSUMS.txt"
   ],
   "scripts": {
     "test": "./test.sh"

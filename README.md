@@ -77,6 +77,7 @@ curl -sL https://raw.githubusercontent.com/sirrodgepodge/rrule_plpgsql/main/src/
 ### 🔒 Security & Advanced Features
 
 - **[Security Guide](SECURITY.md)** - Best practices and vulnerability reporting
+- **[Performance Optimization](PERFORMANCE.md)** - Indexes, query patterns, and scaling recommendations
 - **[Sub-Day Operations](INCLUDING_SUBDAY_OPERATIONS.md)** - HOURLY/MINUTELY/SECONDLY guide (disabled by default)
 - **[Migration Guide](MANUAL_MIGRATION.md)** - Upgrading with dependent database objects
 

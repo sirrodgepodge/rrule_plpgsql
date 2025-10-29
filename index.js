@@ -27,6 +27,9 @@ const SQL = {
   /** Complete installation SQL (includes all RRULE functions) */
   install: fs.readFileSync(path.join(__dirname, 'src/install.sql'), 'utf8'),
 
+  /** Installation with sub-day frequency support (HOURLY, MINUTELY, SECONDLY) */
+  installWithSubday: fs.readFileSync(path.join(__dirname, 'src/install_with_subday.sql'), 'utf8'),
+
   /** Core RRULE implementation with RFC 5545 & RFC 7529 compliance and public API */
   rrule: fs.readFileSync(path.join(__dirname, 'src/rrule.sql'), 'utf8'),
 };

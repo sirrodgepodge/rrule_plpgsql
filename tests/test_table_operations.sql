@@ -25,9 +25,14 @@ BEGIN;
 -- Ensure timezone consistency
 SET timezone = 'UTC';
 
--- Load rrule functions (assumes already installed)
--- If not installed, run: \i ../src/install.sql
+-- Create rrule schema and load functions
+DROP SCHEMA IF EXISTS rrule CASCADE;
+CREATE SCHEMA IF NOT EXISTS rrule;
 SET search_path = rrule, public;
+
+-- Load the RRULE functions
+\i src/rrule.sql
+\i src/rrule_subday.sql
 
 -- Test results table
 CREATE TEMP TABLE test_results (
@@ -62,10 +67,10 @@ CREATE TEMP TABLE subscriptions (
 
 INSERT INTO subscriptions (customer_id, plan_name, rrule, subscription_start, last_billed_at, status, amount)
 VALUES
-    (101, 'Premium Monthly', 'FREQ=MONTHLY;BYMONTHDAY=1', '2025-01-01 00:00:00+00', '2025-01-01 00:00:00+00', 'active', 49.99),
-    (102, 'Basic Weekly', 'FREQ=WEEKLY;BYDAY=MO', '2025-01-06 00:00:00+00', '2025-01-20 00:00:00+00', 'active', 19.99),
-    (103, 'Annual Plan', 'FREQ=YEARLY;BYMONTH=1;BYMONTHDAY=15', '2025-01-15 00:00:00+00', NULL, 'active', 299.99),
-    (104, 'Paused Plan', 'FREQ=MONTHLY;BYMONTHDAY=1', '2024-12-01 00:00:00+00', '2024-12-01 00:00:00+00', 'paused', 29.99);
+    (1, 'Premium Monthly', 'FREQ=MONTHLY;BYMONTHDAY=1', '2025-01-01 00:00:00+00', '2025-01-01 00:00:00+00', 'active', 49.99),
+    (2, 'Basic Weekly', 'FREQ=WEEKLY;BYDAY=MO', '2025-01-06 00:00:00+00', '2025-01-20 00:00:00+00', 'active', 19.99),
+    (3, 'Annual Plan', 'FREQ=YEARLY;BYMONTH=1;BYMONTHDAY=15', '2025-01-15 00:00:00+00', NULL, 'active', 299.99),
+    (4, 'Paused Plan', 'FREQ=MONTHLY;BYMONTHDAY=1', '2024-12-01 00:00:00+00', '2024-12-01 00:00:00+00', 'paused', 29.99);
 
 INSERT INTO test_results VALUES (1, 'Create and populate subscriptions table',
     (SELECT CASE WHEN COUNT(*) = 4 THEN 'PASS' ELSE 'FAIL' END FROM subscriptions)
@@ -73,11 +78,13 @@ INSERT INTO test_results VALUES (1, 'Create and populate subscriptions table',
 
 -- Test 2: Batch update next billing dates for all active subscriptions
 UPDATE subscriptions
-SET next_billing_date = rrule.after(
-    rrule,
-    subscription_start,
-    COALESCE(last_billed_at, subscription_start),
-    1
+SET next_billing_date = (
+    SELECT * FROM rrule.after(
+        subscriptions.rrule,
+        subscriptions.subscription_start,
+        COALESCE(subscriptions.last_billed_at, subscriptions.subscription_start),
+        1
+    ) LIMIT 1
 )
 WHERE status = 'active';
 
@@ -132,13 +139,13 @@ INSERT INTO test_results VALUES (5, 'Aggregation: revenue forecast by month',
             SUM(s.amount) AS expected_revenue
         FROM subscriptions s
         CROSS JOIN LATERAL (
-            SELECT * FROM rrule.between(
+            SELECT occurrence FROM rrule.between(
                 s.rrule,
                 s.subscription_start,
                 NOW(),
                 NOW() + INTERVAL '3 months'
-            )
-        ) AS occurrence
+            ) AS occurrence
+        ) AS occ
         WHERE s.status = 'active'
         GROUP BY billing_month
     ) revenue_by_month)
@@ -162,9 +169,9 @@ CREATE TEMP TABLE events (
 
 INSERT INTO events (title, rrule, event_start, status)
 VALUES
-    ('Daily Standup', 'FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR;COUNT=50', '2025-01-06 09:00:00+00', 'active'),
-    ('Weekly Review', 'FREQ=WEEKLY;BYDAY=FR;COUNT=20', '2025-01-10 15:00:00+00', 'active'),
-    ('Monthly Planning', 'FREQ=MONTHLY;BYDAY=1MO;COUNT=12', '2025-01-06 10:00:00+00', 'active'),
+    ('Daily Standup', 'FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR;COUNT=500', '2025-01-06 09:00:00+00', 'active'),
+    ('Weekly Review', 'FREQ=WEEKLY;BYDAY=FR;COUNT=200', '2025-01-10 15:00:00+00', 'active'),
+    ('Monthly Planning', 'FREQ=MONTHLY;BYDAY=1MO;COUNT=120', '2025-01-06 10:00:00+00', 'active'),
     ('Archived Event', 'FREQ=DAILY;COUNT=10', '2024-01-01 10:00:00+00', 'archived');
 
 INSERT INTO test_results VALUES (6, 'Create events table',
@@ -174,8 +181,8 @@ INSERT INTO test_results VALUES (6, 'Create events table',
 -- Test 7: Batch update computed columns
 UPDATE events
 SET
-    next_occurrence = rrule.after(rrule, event_start, NOW(), 1),
-    occurrence_count = rrule.count(rrule, event_start);
+    next_occurrence = (SELECT after_result FROM rrule.after(events.rrule, events.event_start, NOW(), 1) AS after_result LIMIT 1),
+    occurrence_count = rrule.count(events.rrule, events.event_start);
 
 INSERT INTO test_results VALUES (7, 'Batch UPDATE: multiple computed columns',
     (SELECT CASE
@@ -196,13 +203,11 @@ INSERT INTO test_results VALUES (8, 'Set filtering: weekend occurrences',
     END
     FROM events e
     CROSS JOIN LATERAL (
-        SELECT * FROM rrule.between(
+        SELECT occurrence FROM rrule.between(
             e.rrule,
             e.event_start,
             NOW(),
-            NOW() + INTERVAL '30 days'
-        )
-    ) AS occurrence
+            NOW() + INTERVAL '30 days' ) AS occurrence ) AS occ
     WHERE EXTRACT(DOW FROM occurrence) IN (0, 6))  -- Sunday = 0, Saturday = 6
 );
 
@@ -247,13 +252,11 @@ INSERT INTO test_results VALUES (10, 'Conflict detection: find overlapping event
             occurrence + (e.duration_minutes || ' minutes')::INTERVAL AS event_end
         FROM calendar_events e
         CROSS JOIN LATERAL (
-            SELECT * FROM rrule.between(
+            SELECT occurrence FROM rrule.between(
                 e.rrule,
                 e.event_start,
                 '2025-01-07 00:00:00+00'::TIMESTAMPTZ,
-                '2025-01-08 00:00:00+00'::TIMESTAMPTZ
-            )
-        ) AS occurrence
+                '2025-01-08 00:00:00+00'::TIMESTAMPTZ ) AS occurrence ) AS occ
         WHERE e.user_id = 123
     ) user_events
     WHERE user_events.event_start < '2025-01-07 14:45:00+00'::TIMESTAMPTZ
@@ -301,13 +304,11 @@ INSERT INTO test_results VALUES (12, 'Resource availability: find free rooms',
         SELECT DISTINCT rb.room_id
         FROM room_bookings rb
         CROSS JOIN LATERAL (
-            SELECT * FROM rrule.between(
+            SELECT occurrence FROM rrule.between(
                 rb.rrule,
                 rb.booking_start,
                 '2025-01-08 09:00:00+00'::TIMESTAMPTZ,
-                '2025-01-08 13:00:00+00'::TIMESTAMPTZ
-            )
-        ) AS occurrence
+                '2025-01-08 13:00:00+00'::TIMESTAMPTZ ) AS occurrence ) AS occ
         WHERE occurrence < '2025-01-08 12:00:00+00'::TIMESTAMPTZ
           AND occurrence + (rb.duration_minutes || ' minutes')::INTERVAL > '2025-01-08 10:00:00+00'::TIMESTAMPTZ
     ))
@@ -341,13 +342,11 @@ INSERT INTO test_results VALUES (14, 'Maintenance schedule: next 90 days',
     END
     FROM equipment e
     CROSS JOIN LATERAL (
-        SELECT * FROM rrule.between(
+        SELECT occurrence FROM rrule.between(
             e.maintenance_rrule,
             COALESCE(e.last_maintenance, e.install_date),
             NOW(),
-            NOW() + INTERVAL '90 days'
-        )
-    ) AS occurrence
+            NOW() + INTERVAL '90 days' ) AS occurrence ) AS occ
     WHERE occurrence > NOW())
 );
 
@@ -366,10 +365,10 @@ INSERT INTO test_results VALUES (15, 'Complex JOIN: subscriptions + events',
     FROM subscriptions s
     INNER JOIN events e ON s.customer_id = e.id  -- Artificial join for testing
     CROSS JOIN LATERAL (
-        SELECT * FROM rrule.after(s.rrule, s.subscription_start, NOW(), 1)
+        SELECT after_result AS sub_occurrence FROM rrule.after(s.rrule, s.subscription_start, NOW(), 1) AS after_result
     ) sub_next
     CROSS JOIN LATERAL (
-        SELECT * FROM rrule.after(e.rrule, e.event_start, NOW(), 1)
+        SELECT after_result AS event_occurrence FROM rrule.after(e.rrule, e.event_start, NOW(), 1) AS after_result
     ) event_next
     WHERE s.status = 'active' AND e.status = 'active'
     LIMIT 10)
@@ -385,12 +384,12 @@ INSERT INTO test_results VALUES (16, 'Window functions: occurrence ranking',
     FROM (
         SELECT
             e.id,
-            occurrence,
-            ROW_NUMBER() OVER (PARTITION BY e.id ORDER BY occurrence) AS occurrence_rank
+            occ.occurrence,
+            ROW_NUMBER() OVER (PARTITION BY e.id ORDER BY occ.occurrence) AS occurrence_rank
         FROM events e
         CROSS JOIN LATERAL (
-            SELECT * FROM rrule.after(e.rrule, e.event_start, NOW(), 5)
-        ) AS occurrence
+            SELECT after_result AS occurrence FROM rrule.after(e.rrule, e.event_start, NOW(), 5) AS after_result
+        ) AS occ
         WHERE e.status = 'active'
     ) ranked_occurrences)
 );

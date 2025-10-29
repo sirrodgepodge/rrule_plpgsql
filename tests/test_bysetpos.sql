@@ -25,7 +25,14 @@
 BEGIN;
 
 SET timezone = 'UTC';
+
+-- Create rrule schema and load functions
+DROP SCHEMA IF EXISTS rrule CASCADE;
+CREATE SCHEMA IF NOT EXISTS rrule;
 SET search_path = rrule, public;
+
+-- Load the RRULE functions
+\i src/rrule.sql
 
 \echo ''
 \echo '==================================================================='
@@ -56,8 +63,9 @@ CREATE OR REPLACE FUNCTION test_bysetpos_first() RETURNS TEXT AS $$
 DECLARE
     result_count INT;
 BEGIN
+    PERFORM set_config('timezone', 'UTC', false);
     SELECT COUNT(*) INTO result_count
-    FROM (SELECT * FROM rrule.all('FREQ=MONTHLY;BYDAY=MO;BYSETPOS=1;COUNT=3', '2025-01-01'::TIMESTAMP)) sub;
+    FROM (SELECT * FROM rrule.all('FREQ=MONTHLY;BYDAY=MO;BYSETPOS=1;COUNT=3', '2025-01-01'::TIMESTAMP) AS occurrence) sub;
 
     IF result_count = 3 THEN
         RETURN 'PASSED';
@@ -79,8 +87,9 @@ CREATE OR REPLACE FUNCTION test_bysetpos_second() RETURNS TEXT AS $$
 DECLARE
     result_count INT;
 BEGIN
+    PERFORM set_config('timezone', 'UTC', false);
     SELECT COUNT(*) INTO result_count
-    FROM (SELECT * FROM rrule.all('FREQ=MONTHLY;BYDAY=MO;BYSETPOS=2;COUNT=3', '2025-01-01'::TIMESTAMP)) sub;
+    FROM (SELECT * FROM rrule.all('FREQ=MONTHLY;BYDAY=MO;BYSETPOS=2;COUNT=3', '2025-01-01'::TIMESTAMP) AS occurrence) sub;
 
     IF result_count = 3 THEN
         RETURN 'PASSED';
@@ -103,8 +112,9 @@ CREATE OR REPLACE FUNCTION test_bysetpos_last() RETURNS TEXT AS $$
 DECLARE
     result_count INT;
 BEGIN
+    PERFORM set_config('timezone', 'UTC', false);
     SELECT COUNT(*) INTO result_count
-    FROM (SELECT * FROM rrule.all('FREQ=MONTHLY;BYDAY=MO;BYSETPOS=-1;COUNT=3', '2025-01-01'::TIMESTAMP)) sub;
+    FROM (SELECT * FROM rrule.all('FREQ=MONTHLY;BYDAY=MO;BYSETPOS=-1;COUNT=3', '2025-01-01'::TIMESTAMP) AS occurrence) sub;
 
     IF result_count = 3 THEN
         RETURN 'PASSED';
@@ -126,8 +136,9 @@ CREATE OR REPLACE FUNCTION test_bysetpos_second_last() RETURNS TEXT AS $$
 DECLARE
     result_count INT;
 BEGIN
+    PERFORM set_config('timezone', 'UTC', false);
     SELECT COUNT(*) INTO result_count
-    FROM (SELECT * FROM rrule.all('FREQ=MONTHLY;BYDAY=MO;BYSETPOS=-2;COUNT=3', '2025-01-01'::TIMESTAMP)) sub;
+    FROM (SELECT * FROM rrule.all('FREQ=MONTHLY;BYDAY=MO;BYSETPOS=-2;COUNT=3', '2025-01-01'::TIMESTAMP) AS occurrence) sub;
 
     IF result_count = 3 THEN
         RETURN 'PASSED';
@@ -159,6 +170,7 @@ DECLARE
     expected TIMESTAMP[];
     actual TIMESTAMP[];
 BEGIN
+    PERFORM set_config('timezone', 'UTC', false);
     -- Expected: 1st Mon (Jan 6), 3rd Mon (Jan 20), 1st Mon (Feb 3)
     expected := ARRAY[
         '2025-01-06 00:00:00'::TIMESTAMP,
@@ -189,8 +201,9 @@ CREATE OR REPLACE FUNCTION test_bysetpos_first_last() RETURNS TEXT AS $$
 DECLARE
     result_count INT;
 BEGIN
+    PERFORM set_config('timezone', 'UTC', false);
     SELECT COUNT(*) INTO result_count
-    FROM (SELECT * FROM rrule.all('FREQ=MONTHLY;BYDAY=MO;BYSETPOS=1,-1;COUNT=4', '2025-01-01'::TIMESTAMP)) sub;
+    FROM (SELECT * FROM rrule.all('FREQ=MONTHLY;BYDAY=MO;BYSETPOS=1,-1;COUNT=4', '2025-01-01'::TIMESTAMP) AS occurrence) sub;
 
     -- Should get 2 per month (first and last Monday), COUNT=4 means 4 total
     IF result_count = 4 THEN
@@ -213,9 +226,10 @@ CREATE OR REPLACE FUNCTION test_bysetpos_multi_weekday() RETURNS TEXT AS $$
 DECLARE
     result_count INT;
 BEGIN
+    PERFORM set_config('timezone', 'UTC', false);
     -- Weekly, all weekdays (MO-FR), get only first 2 each week
     SELECT COUNT(*) INTO result_count
-    FROM (SELECT * FROM rrule.all('FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=1,2;COUNT=3', '2025-01-06'::TIMESTAMP)) sub;
+    FROM (SELECT * FROM rrule.all('FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=1,2;COUNT=3', '2025-01-06'::TIMESTAMP) AS occurrence) sub;
 
     -- Should get 2 per week (first 2 weekdays), stop at COUNT=3 means 3 total
     IF result_count = 3 THEN
@@ -247,8 +261,9 @@ CREATE OR REPLACE FUNCTION test_bysetpos_out_of_range() RETURNS TEXT AS $$
 DECLARE
     result_count INT;
 BEGIN
+    PERFORM set_config('timezone', 'UTC', false);
     SELECT COUNT(*) INTO result_count
-    FROM (SELECT * FROM rrule.all('FREQ=MONTHLY;BYDAY=MO;BYSETPOS=6;COUNT=5', '2025-01-01'::TIMESTAMP)) sub;
+    FROM (SELECT * FROM rrule.all('FREQ=MONTHLY;BYDAY=MO;BYSETPOS=6;COUNT=5', '2025-01-01'::TIMESTAMP) AS occurrence) sub;
 
     -- Should return 0 because no month has 6 Mondays
     IF result_count = 0 THEN
@@ -271,8 +286,9 @@ CREATE OR REPLACE FUNCTION test_bysetpos_out_of_range_negative() RETURNS TEXT AS
 DECLARE
     result_count INT;
 BEGIN
+    PERFORM set_config('timezone', 'UTC', false);
     SELECT COUNT(*) INTO result_count
-    FROM (SELECT * FROM rrule.all('FREQ=MONTHLY;BYDAY=MO;BYSETPOS=-10;COUNT=5', '2025-01-01'::TIMESTAMP)) sub;
+    FROM (SELECT * FROM rrule.all('FREQ=MONTHLY;BYDAY=MO;BYSETPOS=-10;COUNT=5', '2025-01-01'::TIMESTAMP) AS occurrence) sub;
 
     -- Should return 0 because no month has 10 Mondays
     IF result_count = 0 THEN
@@ -295,8 +311,9 @@ CREATE OR REPLACE FUNCTION test_bysetpos_count_one() RETURNS TEXT AS $$
 DECLARE
     result_count INT;
 BEGIN
+    PERFORM set_config('timezone', 'UTC', false);
     SELECT COUNT(*) INTO result_count
-    FROM (SELECT * FROM rrule.all('FREQ=MONTHLY;BYDAY=MO;BYSETPOS=1;COUNT=1', '2025-01-01'::TIMESTAMP)) sub;
+    FROM (SELECT * FROM rrule.all('FREQ=MONTHLY;BYDAY=MO;BYSETPOS=1;COUNT=1', '2025-01-01'::TIMESTAMP) AS occurrence) sub;
 
     IF result_count = 1 THEN
         RETURN 'PASSED';
@@ -318,8 +335,9 @@ CREATE OR REPLACE FUNCTION test_bysetpos_mixed_complex() RETURNS TEXT AS $$
 DECLARE
     result_count INT;
 BEGIN
+    PERFORM set_config('timezone', 'UTC', false);
     SELECT COUNT(*) INTO result_count
-    FROM (SELECT * FROM rrule.all('FREQ=MONTHLY;BYDAY=MO;BYSETPOS=1,3,-2,-1;COUNT=8', '2025-01-01'::TIMESTAMP)) sub;
+    FROM (SELECT * FROM rrule.all('FREQ=MONTHLY;BYDAY=MO;BYSETPOS=1,3,-2,-1;COUNT=8', '2025-01-01'::TIMESTAMP) AS occurrence) sub;
 
     -- Should get 4 per month (1st, 3rd, 2nd-to-last, last), COUNT=8 means 8 total
     IF result_count = 8 THEN
@@ -351,6 +369,7 @@ DECLARE
     expected TIMESTAMP[];
     actual TIMESTAMP[];
 BEGIN
+    PERFORM set_config('timezone', 'UTC', false);
     -- First Monday of Jan, Feb, Mar 2025
     expected := ARRAY[
         '2025-01-06 00:00:00'::TIMESTAMP,
@@ -382,6 +401,7 @@ DECLARE
     expected TIMESTAMP[];
     actual TIMESTAMP[];
 BEGIN
+    PERFORM set_config('timezone', 'UTC', false);
     -- Last Monday of Jan, Feb, Mar 2025
     expected := ARRAY[
         '2025-01-27 00:00:00'::TIMESTAMP,

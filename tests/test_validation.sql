@@ -21,6 +21,7 @@ BEGIN;
 SET timezone = 'UTC';
 
 -- Create rrule schema
+DROP SCHEMA IF EXISTS rrule CASCADE;
 CREATE SCHEMA IF NOT EXISTS rrule;
 SET search_path = rrule, public;
 
@@ -788,7 +789,94 @@ SELECT
 FROM validation_test_results
 ORDER BY test_number;
 
+------------------------------------------------------------------------------------------------------
+-- Timezone Validation Tests (validate_timezone helper function)
+------------------------------------------------------------------------------------------------------
+
+-- Test 5.1: Valid timezone should succeed
+DO $$
+DECLARE
+  test_passed BOOLEAN := TRUE;
+BEGIN
+  BEGIN
+    PERFORM rrule.validate_timezone('America/New_York');
+  EXCEPTION
+    WHEN OTHERS THEN
+      test_passed := FALSE;
+  END;
+
+  INSERT INTO validation_test_results (test_category, test_name, status) VALUES (
+    'Timezone Validation',
+    'Valid timezone (America/New_York)',
+    CASE WHEN test_passed THEN 'PASS [Valid timezone accepted]' ELSE 'FAIL [Valid timezone rejected]' END
+  );
+END $$;
+
+-- Test 5.2: NULL timezone should succeed (optional parameter)
+DO $$
+DECLARE
+  test_passed BOOLEAN := TRUE;
+BEGIN
+  BEGIN
+    PERFORM rrule.validate_timezone(NULL);
+  EXCEPTION
+    WHEN OTHERS THEN
+      test_passed := FALSE;
+  END;
+
+  INSERT INTO validation_test_results (test_category, test_name, status) VALUES (
+    'Timezone Validation',
+    'NULL timezone (optional parameter)',
+    CASE WHEN test_passed THEN 'PASS [NULL accepted]' ELSE 'FAIL [NULL rejected]' END
+  );
+END $$;
+
+-- Test 5.3: Invalid timezone should raise exception
+DO $$
+DECLARE
+  test_passed BOOLEAN := FALSE;
+BEGIN
+  BEGIN
+    PERFORM rrule.validate_timezone('Invalid/Timezone');
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM LIKE '%Invalid timezone%' THEN
+        test_passed := TRUE;
+      END IF;
+  END;
+
+  INSERT INTO validation_test_results (test_category, test_name, status) VALUES (
+    'Timezone Validation',
+    'Invalid timezone should raise exception',
+    CASE WHEN test_passed THEN 'PASS [Exception raised]' ELSE 'FAIL [No exception]' END
+  );
+END $$;
+
+-- Test 5.4: Integration with rrule.all() TZID parameter
+DO $$
+DECLARE
+  test_passed BOOLEAN := FALSE;
+BEGIN
+  BEGIN
+    PERFORM rrule.all('FREQ=DAILY;COUNT=1;TZID=Invalid/Zone', '2025-01-01'::TIMESTAMP);
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM LIKE '%Invalid timezone%' THEN
+        test_passed := TRUE;
+      END IF;
+  END;
+
+  INSERT INTO validation_test_results (test_category, test_name, status) VALUES (
+    'Timezone Validation',
+    'Integration with rrule.all() TZID',
+    CASE WHEN test_passed THEN 'PASS [TZID validated]' ELSE 'FAIL [TZID not validated]' END
+  );
+END $$;
+
+------------------------------------------------------------------------------------------------------
 -- Check if all tests passed
+------------------------------------------------------------------------------------------------------
+
 DO $$
 DECLARE
     failed_count INT;
