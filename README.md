@@ -52,6 +52,16 @@ Pure PL/pgSQL means:
 
 ## Quick Start
 
+### Option 1: npm (TypeScript/Node.js)
+
+```bash
+npm install rrule-plpgsql
+```
+
+Then install in your database using your ORM/client. See **[Installation Guide](INSTALLATION.md)** for TypeScript/ORM integration.
+
+### Option 2: Direct SQL Installation
+
 ```bash
 # Install via psql
 psql -d your_database -f src/install.sql
@@ -60,7 +70,7 @@ psql -d your_database -f src/install.sql
 curl -sL https://raw.githubusercontent.com/sirrodgepodge/rrule_plpgsql/main/src/install.sql | psql -d your_database
 ```
 
-**Next Steps:** See [Installation Guide](INSTALLATION.md) for TypeScript/ORM setup or [Example Usage](EXAMPLE_USAGE.md) for practical patterns.
+**Next Steps:** See [Example Usage](EXAMPLE_USAGE.md) for practical patterns.
 
 ---
 
@@ -189,84 +199,43 @@ psql -d your_database -f src/install_with_subday.sql
 
 ## API Overview
 
-**Both APIs are fully timezone-aware with automatic DST handling.**
+### Core Functions
 
-### Public API Functions
-
-All functions support both `TIMESTAMP` and `TIMESTAMPTZ` types with flexible timezone handling:
-
-**Timezone Resolution Priority:**
-1. **Explicit timezone parameter** (if provided)
-2. **TZID in RRULE string** (e.g., `TZID=America/New_York`)
-3. **UTC** (fallback when neither is specified)
+All functions support both `TIMESTAMP` and `TIMESTAMPTZ` with automatic timezone handling:
 
 ```sql
--- Get all occurrences
+-- Generate occurrences
 rrule.all(rrule, dtstart) → SETOF TIMESTAMP
-rrule.all(rrule, dtstart_tz, timezone DEFAULT NULL) → SETOF TIMESTAMPTZ
+rrule.between(rrule, dtstart, start, end) → SETOF TIMESTAMP
 
--- Get occurrences in date range
-rrule.between(rrule, dtstart, start_date, end_date) → SETOF TIMESTAMP
-rrule.between(rrule, dtstart_tz, start_tz, end_tz, timezone DEFAULT NULL) → SETOF TIMESTAMPTZ
-
--- Get first occurrence after date
+-- Query occurrences
 rrule.after(rrule, dtstart, after_date) → TIMESTAMP
-rrule.after(rrule, dtstart_tz, after_tz, count, timezone DEFAULT NULL) → SETOF TIMESTAMPTZ
-
--- Get last occurrence before date
 rrule.before(rrule, dtstart, before_date) → TIMESTAMP
-rrule.before(rrule, dtstart_tz, before_tz, count, timezone DEFAULT NULL) → SETOF TIMESTAMPTZ
-
--- Count total occurrences
-rrule.count(rrule, dtstart) → INTEGER
-rrule.count(rrule, dtstart_tz, timezone DEFAULT NULL) → INTEGER
-
--- Next occurrence from NOW
 rrule.next(rrule, dtstart) → TIMESTAMP
-rrule.next(rrule, dtstart_tz, timezone DEFAULT NULL) → TIMESTAMPTZ
-
--- Most recent occurrence before NOW
 rrule.most_recent(rrule, dtstart) → TIMESTAMP
-rrule.most_recent(rrule, dtstart_tz, timezone DEFAULT NULL) → TIMESTAMPTZ
 
--- Check if event overlaps date range
-rrule.overlaps(dtstart_tz, dtend_tz, rrule, mindate_tz, maxdate_tz, timezone DEFAULT NULL) → BOOLEAN
+-- Utilities
+rrule.count(rrule, dtstart) → INTEGER
+rrule.overlaps(dtstart, dtend, rrule, mindate, maxdate) → BOOLEAN
 ```
 
-**Examples:**
+### Quick Example
 
 ```sql
--- Using TZID in RRULE string (TIMESTAMP API)
+-- Every Monday for 4 weeks
+SELECT * FROM rrule.all(
+    'FREQ=WEEKLY;BYDAY=MO;COUNT=4',
+    '2025-01-06 10:00:00'::TIMESTAMP
+);
+
+-- With timezone support
 SELECT * FROM rrule.all(
     'FREQ=DAILY;COUNT=5;TZID=America/New_York',
-    '2025-03-08 10:00:00'::TIMESTAMP
-);
-
--- Using explicit timezone parameter (TIMESTAMPTZ API)
-SELECT * FROM rrule.all(
-    'FREQ=DAILY;COUNT=5',
-    '2025-03-08 10:00:00-05'::TIMESTAMPTZ,
-    'America/New_York'
-);
-
--- Timezone parameter overrides TZID in RRULE
-SELECT * FROM rrule.all(
-    'FREQ=DAILY;COUNT=5;TZID=Europe/London',  -- TZID ignored
-    '2025-03-08 10:00:00-05'::TIMESTAMPTZ,
-    'America/New_York'  -- This timezone is used
-);
-
--- Defaults to UTC when no timezone specified
-SELECT * FROM rrule.all(
-    'FREQ=DAILY;COUNT=5',  -- No TZID
-    '2025-03-08 10:00:00+00'::TIMESTAMPTZ,
-    NULL  -- Defaults to UTC
+    '2025-03-08 10:00:00'::TIMESTAMP  -- DST handled automatically
 );
 ```
 
-**DST Handling:** All functions preserve wall-clock time across DST transitions. A meeting at 10:00 AM stays at 10:00 AM even when DST changes the UTC offset.
-
-**See [API Reference](API_REFERENCE.md) for complete function documentation and advanced examples.**
+**See [API Reference](API_REFERENCE.md) for complete function signatures, timezone handling details, and advanced examples.**
 
 ---
 
@@ -274,13 +243,13 @@ SELECT * FROM rrule.all(
 
 Contributions welcome! Please:
 
-1. Run all tests (168/168 must pass - includes integration tests)
+1. Run all tests (all 10 test suites must pass)
 2. Add test coverage for new features
 3. Update documentation
 4. Follow RFC 5545/7529 specifications
 5. Submit pull request
 
-**See [Development Guide](DEVELOPMENT.md) for contribution guidelines.**
+**See [Development Guide](DEVELOPMENT.md) for contribution guidelines and test suite details.**
 
 ---
 
@@ -295,7 +264,7 @@ Contributions welcome! Please:
 - Query planner optimization: PostgreSQL optimizes JOINs and filters with occurrence expansion
 - Early-exit optimizations: Stops computation when COUNT/UNTIL limits reached
 
-**See [Development Guide](DEVELOPMENT.md) for architecture and benchmarking details.**
+**See [Performance Guide](PERFORMANCE.md) for optimization strategies and [Development Guide](DEVELOPMENT.md) for benchmarking details.**
 
 ---
 
