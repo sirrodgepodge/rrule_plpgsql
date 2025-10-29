@@ -60,7 +60,7 @@ psql -d your_database -f src/install.sql
 curl -sL https://raw.githubusercontent.com/sirrodgepodge/rrule_plpgsql/main/src/install.sql | psql -d your_database
 ```
 
-**Next Steps:** See [Example Usage](EXAMPLE_USAGE.md) for practical patterns including subscription billing, batch operations, and calendar scheduling.
+**Next Steps:** See [Installation Guide](INSTALLATION.md) for TypeScript/ORM setup or [Example Usage](EXAMPLE_USAGE.md) for practical patterns.
 
 ---
 
@@ -68,6 +68,7 @@ curl -sL https://raw.githubusercontent.com/sirrodgepodge/rrule_plpgsql/main/src/
 
 ### 📖 Core Documentation
 
+- **[Installation Guide](INSTALLATION.md)** - TypeScript ORMs (node-postgres, TypeORM, Prisma, Knex, Sequelize, Drizzle)
 - **[Example Usage](EXAMPLE_USAGE.md)** - Real-world patterns: subscription billing, batch operations, conflict detection
 - **[API Reference](API_REFERENCE.md)** - Complete function reference with parameters and examples
 - **[RFC Spec Compliance](SPEC_COMPLIANCE.md)** - Supported RFC 5545/7529 features and limitations
