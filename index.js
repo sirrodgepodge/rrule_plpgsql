@@ -30,8 +30,8 @@ const SQL = {
   /** Installation with sub-day frequency support (HOURLY, MINUTELY, SECONDLY) */
   installWithSubday: fs.readFileSync(path.join(__dirname, 'src/install_with_subday.sql'), 'utf8'),
 
-  /** Core RRULE implementation with RFC 5545 & RFC 7529 compliance and public API */
-  rrule: fs.readFileSync(path.join(__dirname, 'src/rrule.sql'), 'utf8'),
+  /** Core RRULE functions only (no schema setup - for advanced use cases) */
+  core: fs.readFileSync(path.join(__dirname, 'src/rrule.sql'), 'utf8'),
 };
 
 module.exports = { SQL };

@@ -62,8 +62,8 @@ export const SQL: {
   install: string;
   /** Installation with sub-day frequency support (HOURLY, MINUTELY, SECONDLY) */
   installWithSubday: string;
-  /** Core RRULE implementation with RFC 5545 & RFC 7529 compliance and public API */
-  rrule: string;
+  /** Core RRULE functions only (no schema setup - for advanced use cases) */
+  core: string;
 };
 
 /**
