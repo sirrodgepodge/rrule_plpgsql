@@ -54,7 +54,7 @@ This package exports raw SQL strings for PostgreSQL. While this approach is tran
    ```json
    {
      "dependencies": {
-       "rrule-plpgsql": "1.0.0"  // Not "^1.0.0"
+       "rrule-plpgsql": "1.1.0"  // Not "^1.1.0"
      }
    }
    ```
