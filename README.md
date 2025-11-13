@@ -1,5 +1,9 @@
 # rrule_plpgsql
 
+[![npm version](https://badge.fury.io/js/rrule-plpgsql.svg)](https://www.npmjs.com/package/rrule-plpgsql)
+[![npm downloads](https://img.shields.io/npm/dm/rrule-plpgsql.svg)](https://www.npmjs.com/package/rrule-plpgsql)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Pure PL/pgSQL implementation of iCalendar RRULE (RFC 5545) for PostgreSQL. No C extensions, no compilation, works everywhere.
 
 ---
