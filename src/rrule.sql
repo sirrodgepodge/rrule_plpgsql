@@ -67,10 +67,11 @@ CREATE TYPE rrule_parts AS (
 
 
 -- Create a function to parse the RRULE into its composite type
-CREATE OR REPLACE FUNCTION parse_rrule_parts( TIMESTAMP WITH TIME ZONE, TEXT ) RETURNS rrule.rrule_parts AS $$
+CREATE OR REPLACE FUNCTION parse_rrule_parts(
+  basedate TIMESTAMP WITH TIME ZONE,
+  repeatrule TEXT
+) RETURNS rrule.rrule_parts AS $$
 DECLARE
-  basedate   ALIAS FOR $1;
-  repeatrule ALIAS FOR $2;
   result rrule.rrule_parts%ROWTYPE;
   until_str TEXT;
 BEGIN
@@ -307,14 +308,11 @@ $$ LANGUAGE plpgsql IMMUTABLE STRICT;
 
 -- Return a SETOF dates within the month of a particular date which match a string of BYDAY rule specifications
 CREATE OR REPLACE FUNCTION rrule_month_byday_set(
-  TIMESTAMP WITH TIME ZONE,
-  TEXT[],
+  in_time TIMESTAMP WITH TIME ZONE,
+  byday TEXT[],
   max_results INT DEFAULT NULL  -- NULL = unlimited, otherwise stop after N results
 ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
 DECLARE
-  in_time ALIAS FOR $1;
-  byday ALIAS FOR $2;
-  max_results ALIAS FOR $3;
   dayrule TEXT;
   i INT;  -- Still needed for final results array iteration
   dow INT;
@@ -527,16 +525,12 @@ $$ LANGUAGE plpgsql IMMUTABLE;  -- STRICT removed to allow NULL max_results
 -- Return a SETOF dates within the week of a particular date which match a single BYDAY rule specification
 -- Now supports WKST (week start day) parameter
 CREATE OR REPLACE FUNCTION rrule_week_byday_set(
-  TIMESTAMP WITH TIME ZONE,
-  TEXT[],
-  TEXT,
+  in_time TIMESTAMP WITH TIME ZONE,
+  byday TEXT[],
+  wkst TEXT,
   max_results INT DEFAULT NULL  -- NULL = unlimited, otherwise stop after N results
 ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
 DECLARE
-  in_time ALIAS FOR $1;
-  byday ALIAS FOR $2;
-  wkst ALIAS FOR $3;
-  max_results ALIAS FOR $4;
   dayrule TEXT;
   dow INT;
   wkst_dow INT;
@@ -735,10 +729,10 @@ $$ LANGUAGE plpgsql IMMUTABLE;
 ------------------------------------------------------------------------------------------------------
 -- Test the weekday of this date against the array of weekdays from the BYDAY rule (FREQ=WEEKLY or less)
 ------------------------------------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION test_byday_rule( TIMESTAMP WITH TIME ZONE, TEXT[] ) RETURNS BOOLEAN AS $$
-DECLARE
-  testme ALIAS FOR $1;
-  byday ALIAS FOR $2;
+CREATE OR REPLACE FUNCTION test_byday_rule(
+  testme TIMESTAMP WITH TIME ZONE,
+  byday TEXT[]
+) RETURNS BOOLEAN AS $$
 BEGIN
   -- Note that this doesn't work for MONTHLY/YEARLY BYDAY clauses which might have numbers prepended
   -- so don't call it that way...
@@ -753,10 +747,10 @@ $$ LANGUAGE plpgsql IMMUTABLE;
 ------------------------------------------------------------------------------------------------------
 -- Test the month of this date against the array of months from the rule
 ------------------------------------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION test_bymonth_rule( TIMESTAMP WITH TIME ZONE, INT[] ) RETURNS BOOLEAN AS $$
-DECLARE
-  testme ALIAS FOR $1;
-  bymonth ALIAS FOR $2;
+CREATE OR REPLACE FUNCTION test_bymonth_rule(
+  testme TIMESTAMP WITH TIME ZONE,
+  bymonth INT[]
+) RETURNS BOOLEAN AS $$
 BEGIN
   IF bymonth IS NOT NULL THEN
     RETURN ( date_part( 'month', testme) = ANY (bymonth) );
@@ -769,10 +763,10 @@ $$ LANGUAGE plpgsql IMMUTABLE;
 ------------------------------------------------------------------------------------------------------
 -- Test the day in month of this date against the array of monthdays from the rule
 ------------------------------------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION test_bymonthday_rule( TIMESTAMP WITH TIME ZONE, INT[] ) RETURNS BOOLEAN AS $$
-DECLARE
-  testme ALIAS FOR $1;
-  bymonthday ALIAS FOR $2;
+CREATE OR REPLACE FUNCTION test_bymonthday_rule(
+  testme TIMESTAMP WITH TIME ZONE,
+  bymonthday INT[]
+) RETURNS BOOLEAN AS $$
 BEGIN
   IF bymonthday IS NOT NULL THEN
     RETURN ( date_part( 'day', testme) = ANY (bymonthday) );
@@ -785,10 +779,10 @@ $$ LANGUAGE plpgsql IMMUTABLE;
 ------------------------------------------------------------------------------------------------------
 -- Test the day in year of this date against the array of yeardays from the rule
 ------------------------------------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION test_byyearday_rule( TIMESTAMP WITH TIME ZONE, INT[] ) RETURNS BOOLEAN AS $$
-DECLARE
-  testme ALIAS FOR $1;
-  byyearday ALIAS FOR $2;
+CREATE OR REPLACE FUNCTION test_byyearday_rule(
+  testme TIMESTAMP WITH TIME ZONE,
+  byyearday INT[]
+) RETURNS BOOLEAN AS $$
 BEGIN
   IF byyearday IS NOT NULL THEN
     RETURN ( date_part( 'doy', testme) = ANY (byyearday) );
@@ -884,10 +878,11 @@ COMMENT ON FUNCTION calculate_safe_iteration_limit IS
 -- (Cursors with SCROLL support have been stable since PostgreSQL 8.3, but this implementation
 -- uses additional features requiring PostgreSQL 12 or later.)
 ------------------------------------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION rrule_bysetpos_filter( REFCURSOR, INT[] ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
+CREATE OR REPLACE FUNCTION rrule_bysetpos_filter(
+  curse REFCURSOR,
+  bysetpos INT[]
+) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
 DECLARE
-  curse ALIAS FOR $1;
-  bysetpos ALIAS FOR $2;
   valid_date TIMESTAMP WITH TIME ZONE;
   i INT;
 BEGIN
@@ -923,14 +918,11 @@ $$ LANGUAGE plpgsql IMMUTABLE;
 -- If time filters specified, generates all matching times within the same day
 ------------------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION rrule_day_time_set(
-  TIMESTAMP WITH TIME ZONE,
-  rrule.rrule_parts,
+  base_time TIMESTAMP WITH TIME ZONE,
+  rule rrule.rrule_parts,
   max_results INT DEFAULT NULL  -- NULL = unlimited, otherwise stop after N results
 ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
 DECLARE
-  base_time ALIAS FOR $1;
-  rrule ALIAS FOR $2;
-  max_results ALIAS FOR $3;
   day_start TIMESTAMP WITH TIME ZONE;
   occurrence TIMESTAMP WITH TIME ZONE;
   hour INT;
@@ -942,12 +934,12 @@ DECLARE
   result_count INT := 0;
 BEGIN
   -- Maintain STRICT semantics for required parameters
-  IF base_time IS NULL OR rrule IS NULL THEN
+  IF base_time IS NULL OR rule IS NULL THEN
     RETURN;
   END IF;
 
   -- If no time-based filters, return the input time
-  IF rrule.byhour IS NULL AND rrule.byminute IS NULL AND rrule.bysecond IS NULL THEN
+  IF rule.byhour IS NULL AND rule.byminute IS NULL AND rule.bysecond IS NULL THEN
     RETURN NEXT base_time;
     RETURN;
   END IF;
@@ -957,10 +949,10 @@ BEGIN
   -- Generate all combinations of hour/minute/second
   hour_idx := 1;
   LOOP
-    EXIT WHEN rrule.byhour IS NULL AND hour_idx > 1;
-    EXIT WHEN rrule.byhour IS NOT NULL AND rrule.byhour[hour_idx] IS NULL;
+    EXIT WHEN rule.byhour IS NULL AND hour_idx > 1;
+    EXIT WHEN rule.byhour IS NOT NULL AND rule.byhour[hour_idx] IS NULL;
 
-    hour := COALESCE(rrule.byhour[hour_idx], date_part('hour', base_time)::INT);
+    hour := COALESCE(rule.byhour[hour_idx], date_part('hour', base_time)::INT);
     IF hour < 0 OR hour > 23 THEN
       hour_idx := hour_idx + 1;
       CONTINUE;
@@ -968,10 +960,10 @@ BEGIN
 
     minute_idx := 1;
     LOOP
-      EXIT WHEN rrule.byminute IS NULL AND minute_idx > 1;
-      EXIT WHEN rrule.byminute IS NOT NULL AND rrule.byminute[minute_idx] IS NULL;
+      EXIT WHEN rule.byminute IS NULL AND minute_idx > 1;
+      EXIT WHEN rule.byminute IS NOT NULL AND rule.byminute[minute_idx] IS NULL;
 
-      minute := COALESCE(rrule.byminute[minute_idx], date_part('minute', base_time)::INT);
+      minute := COALESCE(rule.byminute[minute_idx], date_part('minute', base_time)::INT);
       IF minute < 0 OR minute > 59 THEN
         minute_idx := minute_idx + 1;
         CONTINUE;
@@ -979,10 +971,10 @@ BEGIN
 
       second_idx := 1;
       LOOP
-        EXIT WHEN rrule.bysecond IS NULL AND second_idx > 1;
-        EXIT WHEN rrule.bysecond IS NOT NULL AND rrule.bysecond[second_idx] IS NULL;
+        EXIT WHEN rule.bysecond IS NULL AND second_idx > 1;
+        EXIT WHEN rule.bysecond IS NOT NULL AND rule.bysecond[second_idx] IS NULL;
 
-        second := COALESCE(rrule.bysecond[second_idx], date_part('second', base_time)::INT);
+        second := COALESCE(rule.bysecond[second_idx], date_part('second', base_time)::INT);
         IF second < 0 OR second > 59 THEN
           second_idx := second_idx + 1;
           CONTINUE;
@@ -1003,15 +995,15 @@ BEGIN
         END IF;
 
         second_idx := second_idx + 1;
-        EXIT WHEN rrule.bysecond IS NULL;
+        EXIT WHEN rule.bysecond IS NULL;
       END LOOP;
 
       minute_idx := minute_idx + 1;
-      EXIT WHEN rrule.byminute IS NULL;
+      EXIT WHEN rule.byminute IS NULL;
     END LOOP;
 
     hour_idx := hour_idx + 1;
-    EXIT WHEN rrule.byhour IS NULL;
+    EXIT WHEN rule.byhour IS NULL;
   END LOOP;
 
 END;
@@ -1023,50 +1015,47 @@ $$ LANGUAGE plpgsql IMMUTABLE;  -- STRICT removed to allow NULL max_results
 -- Now supports BYHOUR, BYMINUTE, BYSECOND, and BYSETPOS for sub-day scheduling
 ------------------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION daily_set(
-  TIMESTAMP WITH TIME ZONE,
-  rrule.rrule_parts,
+  after_ts TIMESTAMP WITH TIME ZONE,
+  rule rrule.rrule_parts,
   max_results INT DEFAULT NULL  -- NULL = unlimited, otherwise stop after N results
 ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
 DECLARE
-  after ALIAS FOR $1;
-  rrule ALIAS FOR $2;
-  max_results ALIAS FOR $3;
   curse REFCURSOR;
 BEGIN
   -- Maintain STRICT semantics for required parameters
-  IF after IS NULL OR rrule IS NULL THEN
+  IF after_ts IS NULL OR rule IS NULL THEN
     RETURN;
   END IF;
 
-  IF rrule.bymonth IS NOT NULL AND NOT date_part('month',after) = ANY ( rrule.bymonth ) THEN
+  IF rule.bymonth IS NOT NULL AND NOT date_part('month',after_ts) = ANY ( rule.bymonth ) THEN
     RETURN;
   END IF;
 
-  IF rrule.byweekno IS NOT NULL AND NOT date_part('week',after) = ANY ( rrule.byweekno ) THEN
+  IF rule.byweekno IS NOT NULL AND NOT date_part('week',after_ts) = ANY ( rule.byweekno ) THEN
     RETURN;
   END IF;
 
-  IF rrule.byyearday IS NOT NULL AND NOT date_part('doy',after) = ANY ( rrule.byyearday ) THEN
+  IF rule.byyearday IS NOT NULL AND NOT date_part('doy',after_ts) = ANY ( rule.byyearday ) THEN
     RETURN;
   END IF;
 
-  IF rrule.bymonthday IS NOT NULL AND NOT date_part('day',after) = ANY ( rrule.bymonthday ) THEN
+  IF rule.bymonthday IS NOT NULL AND NOT date_part('day',after_ts) = ANY ( rule.bymonthday ) THEN
     RETURN;
   END IF;
 
-  IF rrule.byday IS NOT NULL AND NOT substring( to_char( after, 'DY') for 2 from 1) = ANY ( rrule.byday ) THEN
+  IF rule.byday IS NOT NULL AND NOT substring( to_char( after_ts, 'DY') for 2 from 1) = ANY ( rule.byday ) THEN
     RETURN;
   END IF;
 
   -- Now handle BYHOUR, BYMINUTE, BYSECOND, and BYSETPOS
-  IF rrule.byhour IS NOT NULL OR rrule.byminute IS NOT NULL OR rrule.bysecond IS NOT NULL OR rrule.bysetpos IS NOT NULL THEN
+  IF rule.byhour IS NOT NULL OR rule.byminute IS NOT NULL OR rule.bysecond IS NOT NULL OR rule.bysetpos IS NOT NULL THEN
     -- Generate times within the day and apply BYSETPOS filter
     -- Pass max_results down (NULL = unlimited, for BYSETPOS which needs full set)
-    OPEN curse SCROLL FOR SELECT r FROM rrule.rrule_day_time_set(after, rrule, max_results) r ORDER BY 1;
-    RETURN QUERY SELECT d FROM rrule.rrule_bysetpos_filter(curse, rrule.bysetpos) d;
+    OPEN curse SCROLL FOR SELECT r FROM rrule.rrule_day_time_set(after_ts, rule, max_results) r ORDER BY 1;
+    RETURN QUERY SELECT d FROM rrule.rrule_bysetpos_filter(curse, rule.bysetpos) d;
   ELSE
     -- No sub-day scheduling - return the input time
-    RETURN NEXT after;
+    RETURN NEXT after_ts;
   END IF;
 
 END;
@@ -1080,43 +1069,40 @@ $$ LANGUAGE plpgsql IMMUTABLE;  -- STRICT removed to allow NULL max_results
 -- Imagine that.
 ------------------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION weekly_set(
-  TIMESTAMP WITH TIME ZONE,
-  rrule.rrule_parts,
+  after_ts TIMESTAMP WITH TIME ZONE,
+  rule rrule.rrule_parts,
   max_results INT DEFAULT NULL  -- NULL = unlimited, otherwise stop after N results
 ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
 DECLARE
-  after ALIAS FOR $1;
-  rrule ALIAS FOR $2;
-  max_results ALIAS FOR $3;
   valid_date TIMESTAMP WITH TIME ZONE;
   curse REFCURSOR;
   weekno INT;
   i INT;
 BEGIN
   -- Maintain STRICT semantics for required parameters
-  IF after IS NULL OR rrule IS NULL THEN
+  IF after_ts IS NULL OR rule IS NULL THEN
     RETURN;
   END IF;
 
-  IF rrule.byweekno IS NOT NULL THEN
+  IF rule.byweekno IS NOT NULL THEN
     -- Use WKST-aware week numbering instead of PostgreSQL's ISO 8601 default
-    weekno := rrule.get_week_number(after, rrule.wkst);
-    IF NOT weekno = ANY ( rrule.byweekno ) THEN
+    weekno := rrule.get_week_number(after_ts, rule.wkst);
+    IF NOT weekno = ANY ( rule.byweekno ) THEN
       RETURN;
     END IF;
   END IF;
 
   -- BYYEARDAY filter: Rare but valid use case
   -- Example: FREQ=WEEKLY;BYYEARDAY=100 = "Every week, but only on day 100 of year"
-  IF rrule.byyearday IS NOT NULL THEN
-    IF NOT date_part('doy', after) = ANY ( rrule.byyearday ) THEN
+  IF rule.byyearday IS NOT NULL THEN
+    IF NOT date_part('doy', after_ts) = ANY ( rule.byyearday ) THEN
       RETURN;
     END IF;
   END IF;
 
   -- Pass WKST and max_results to rrule_week_byday_set for proper week boundary calculation
-  OPEN curse SCROLL FOR SELECT r FROM rrule.rrule_week_byday_set(after, rrule.byday, rrule.wkst, max_results) r;
-  RETURN QUERY SELECT d FROM rrule.rrule_bysetpos_filter(curse,rrule.bysetpos) d;
+  OPEN curse SCROLL FOR SELECT r FROM rrule.rrule_week_byday_set(after_ts, rule.byday, rule.wkst, max_results) r;
+  RETURN QUERY SELECT d FROM rrule.rrule_bysetpos_filter(curse, rule.bysetpos) d;
 
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;  -- STRICT removed to allow NULL max_results
@@ -1126,21 +1112,18 @@ $$ LANGUAGE plpgsql IMMUTABLE;  -- STRICT removed to allow NULL max_results
 -- Return another month's worth of events
 ------------------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION monthly_set(
-  TIMESTAMP WITH TIME ZONE,
-  rrule.rrule_parts,
+  after_ts TIMESTAMP WITH TIME ZONE,
+  rule rrule.rrule_parts,
   max_results INT DEFAULT NULL  -- NULL = unlimited, otherwise stop after N results
 ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
 DECLARE
-  after ALIAS FOR $1;
-  rrule ALIAS FOR $2;
-  max_results ALIAS FOR $3;
   valid_date TIMESTAMP WITH TIME ZONE;
   curse REFCURSOR;
   setpos INT;
   i INT;
 BEGIN
   -- Maintain STRICT semantics for required parameters
-  IF after IS NULL OR rrule IS NULL THEN
+  IF after_ts IS NULL OR rule IS NULL THEN
     RETURN;
   END IF;
 
@@ -1161,33 +1144,33 @@ BEGIN
 
   -- BYWEEKNO filter: Rare but valid use case
   -- Example: FREQ=MONTHLY;BYWEEKNO=10 = "Every month, but only in week 10 of year"
-  IF rrule.byweekno IS NOT NULL THEN
+  IF rule.byweekno IS NOT NULL THEN
     -- Use WKST-aware week numbering
-    IF NOT rrule.get_week_number(after, rrule.wkst) = ANY ( rrule.byweekno ) THEN
+    IF NOT rrule.get_week_number(after_ts, rule.wkst) = ANY ( rule.byweekno ) THEN
       RETURN;
     END IF;
   END IF;
 
   -- BYYEARDAY filter: Rare but valid use case
   -- Example: FREQ=MONTHLY;BYYEARDAY=100 = "Every month, but only on day 100 of year"
-  IF rrule.byyearday IS NOT NULL THEN
-    IF NOT date_part('doy', after) = ANY ( rrule.byyearday ) THEN
+  IF rule.byyearday IS NOT NULL THEN
+    IF NOT date_part('doy', after_ts) = ANY ( rule.byyearday ) THEN
       RETURN;
     END IF;
   END IF;
 
   -- Pass max_results down to helper functions
-  IF rrule.byday IS NOT NULL AND rrule.bymonthday IS NOT NULL THEN
-    OPEN curse SCROLL FOR SELECT r FROM rrule.rrule_month_byday_set(after, rrule.byday, max_results) r
-                INTERSECT SELECT r FROM rrule.rrule_month_bymonthday_set(after, rrule.bymonthday, rrule.skip, max_results) r
+  IF rule.byday IS NOT NULL AND rule.bymonthday IS NOT NULL THEN
+    OPEN curse SCROLL FOR SELECT r FROM rrule.rrule_month_byday_set(after_ts, rule.byday, max_results) r
+                INTERSECT SELECT r FROM rrule.rrule_month_bymonthday_set(after_ts, rule.bymonthday, rule.skip, max_results) r
                     ORDER BY 1;
-  ELSIF rrule.bymonthday IS NOT NULL THEN
-    OPEN curse SCROLL FOR SELECT r FROM rrule.rrule_month_bymonthday_set(after, rrule.bymonthday, rrule.skip, max_results) r ORDER BY 1;
+  ELSIF rule.bymonthday IS NOT NULL THEN
+    OPEN curse SCROLL FOR SELECT r FROM rrule.rrule_month_bymonthday_set(after_ts, rule.bymonthday, rule.skip, max_results) r ORDER BY 1;
   ELSE
-    OPEN curse SCROLL FOR SELECT r FROM rrule.rrule_month_byday_set(after, rrule.byday, max_results) r ORDER BY 1;
+    OPEN curse SCROLL FOR SELECT r FROM rrule.rrule_month_byday_set(after_ts, rule.byday, max_results) r ORDER BY 1;
   END IF;
 
-  RETURN QUERY SELECT d FROM rrule.rrule_bysetpos_filter(curse,rrule.bysetpos) d;
+  RETURN QUERY SELECT d FROM rrule.rrule_bysetpos_filter(curse, rule.bysetpos) d;
 
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;  -- STRICT removed to allow NULL max_results
@@ -1197,34 +1180,31 @@ $$ LANGUAGE plpgsql IMMUTABLE;  -- STRICT removed to allow NULL max_results
 -- If this is YEARLY;BYMONTH, abuse MONTHLY;BYMONTH for everything except the BYSETPOS
 ------------------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION rrule_yearly_bymonth_set(
-  TIMESTAMP WITH TIME ZONE,
-  rrule.rrule_parts,
+  after_ts TIMESTAMP WITH TIME ZONE,
+  rule rrule.rrule_parts,
   max_results INT DEFAULT NULL  -- NULL = unlimited, otherwise stop after N results
 ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
 DECLARE
-  after ALIAS FOR $1;
-  rrule ALIAS FOR $2;
-  max_results ALIAS FOR $3;
   current_base TIMESTAMP WITH TIME ZONE;
   rr rrule.rrule_parts;
   i INT;
 BEGIN
   -- Maintain STRICT semantics for required parameters
-  IF after IS NULL OR rrule IS NULL THEN
+  IF after_ts IS NULL OR rule IS NULL THEN
     RETURN;
   END IF;
 
-  IF rrule.bymonth IS NOT NULL THEN
+  IF rule.bymonth IS NOT NULL THEN
     -- Ensure we don't pass BYSETPOS down
-    rr := rrule;
+    rr := rule;
     rr.bysetpos := NULL;
     FOR i IN 1..12 LOOP
       EXIT WHEN rr.bymonth[i] IS NULL;
-      current_base := date_trunc( 'year', after ) + ((rr.bymonth[i] - 1)::text || ' months')::interval + ((date_part('day', after) - 1)::text || ' days')::interval + (after::time)::interval;
+      current_base := date_trunc( 'year', after_ts ) + ((rr.bymonth[i] - 1)::text || ' months')::interval + ((date_part('day', after_ts) - 1)::text || ' days')::interval + (after_ts::time)::interval;
       RETURN QUERY SELECT r FROM rrule.monthly_set(current_base, rr, max_results) r;
     END LOOP;
   ELSE
-    RETURN NEXT after;
+    RETURN NEXT after_ts;
   END IF;
 
 END;
@@ -1238,14 +1218,11 @@ $$ LANGUAGE plpgsql IMMUTABLE;  -- STRICT removed to allow NULL max_results
 -- Supports negative indices: BYYEARDAY=-1 = December 31
 ------------------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION rrule_yearly_byyearday_set(
-  TIMESTAMP WITH TIME ZONE,
-  rrule.rrule_parts,
+  after_ts TIMESTAMP WITH TIME ZONE,
+  rule rrule.rrule_parts,
   max_results INT DEFAULT NULL  -- NULL = unlimited, otherwise stop after N results
 ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
 DECLARE
-  after ALIAS FOR $1;
-  rrule ALIAS FOR $2;
-  max_results ALIAS FOR $3;
   year_start TIMESTAMP WITH TIME ZONE;
   year_end TIMESTAMP WITH TIME ZONE;
   occurrence TIMESTAMP WITH TIME ZONE;
@@ -1255,24 +1232,24 @@ DECLARE
   result_count INT := 0;
 BEGIN
   -- Maintain STRICT semantics for required parameters
-  IF after IS NULL OR rrule IS NULL THEN
+  IF after_ts IS NULL OR rule IS NULL THEN
     RETURN;
   END IF;
 
-  IF rrule.byyearday IS NULL THEN
-    RETURN NEXT after;
+  IF rule.byyearday IS NULL THEN
+    RETURN NEXT after_ts;
     RETURN;
   END IF;
 
-  year_start := date_trunc('year', after) + (after::time)::interval;
+  year_start := date_trunc('year', after_ts) + (after_ts::time)::interval;
   year_end := year_start + '1 year'::interval - '1 day'::interval;
   days_in_year := date_part('doy', year_end)::INT;
 
   -- Process each yearday in the array
   FOR i IN 1..366 LOOP
-    EXIT WHEN rrule.byyearday[i] IS NULL;
+    EXIT WHEN rule.byyearday[i] IS NULL;
 
-    yearday := rrule.byyearday[i];
+    yearday := rule.byyearday[i];
 
     IF yearday > 0 THEN
       -- Positive index: 1 = Jan 1, 100 = April 9/10, 365/366 = Dec 31
@@ -1312,8 +1289,8 @@ $$ LANGUAGE plpgsql IMMUTABLE;  -- STRICT removed to allow NULL max_results
 -- Example: FREQ=YEARLY;BYWEEKNO=1;BYDAY=MO,FR generates Mondays and Fridays of week 1
 ------------------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION rrule_yearly_byweekno_set(
-  after TIMESTAMP WITH TIME ZONE,
-  rrule rrule_parts,
+  after_ts TIMESTAMP WITH TIME ZONE,
+  rule rrule_parts,
   max_results INT DEFAULT NULL  -- NULL = unlimited, otherwise stop after N results
 ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
 DECLARE
@@ -1328,12 +1305,12 @@ DECLARE
   result_count INT := 0;
 BEGIN
   -- Maintain STRICT semantics for required parameters
-  IF after IS NULL OR rrule IS NULL THEN
+  IF after_ts IS NULL OR rule IS NULL THEN
     RETURN;
   END IF;
 
-  year_start := date_trunc('year', after);
-  wkst_num := rrule.weekday_to_number(rrule.wkst);
+  year_start := date_trunc('year', after_ts);
+  wkst_num := rrule.weekday_to_number(rule.wkst);
   first_day_dow := date_part('dow', year_start);
 
   -- Calculate first WKST of the year (this is the start of week 1)
@@ -1341,7 +1318,7 @@ BEGIN
   first_wkst := year_start + (days_to_first_wkst::TEXT || ' days')::INTERVAL;
 
   -- For each specified week number
-  FOREACH week_num IN ARRAY rrule.byweekno LOOP
+  FOREACH week_num IN ARRAY rule.byweekno LOOP
     -- Skip invalid week numbers (must be 1-53)
     IF week_num < 1 OR week_num > 53 THEN
       CONTINUE;
@@ -1352,21 +1329,21 @@ BEGIN
     week_start := first_wkst + (INTERVAL '1 day' * ((week_num - 1) * 7));
 
     -- Add time component from 'after' to maintain time-of-day
-    week_start := date_trunc('day', week_start) + (after::time)::INTERVAL;
+    week_start := date_trunc('day', week_start) + (after_ts::time)::INTERVAL;
 
     -- Check if this week is still in the same year
-    IF date_part('year', week_start) != date_part('year', after) THEN
+    IF date_part('year', week_start) != date_part('year', after_ts) THEN
       -- Week extends into next year, skip it
       CONTINUE;
     END IF;
 
-    IF rrule.byday IS NOT NULL THEN
+    IF rule.byday IS NOT NULL THEN
       -- Generate all BYDAY occurrences in this week
       FOR occurrence IN
-        SELECT r FROM rrule.rrule_week_byday_set(week_start, rrule.byday, rrule.wkst, max_results - result_count) r
+        SELECT r FROM rrule.rrule_week_byday_set(week_start, rule.byday, rule.wkst, max_results - result_count) r
       LOOP
         -- Only return occurrences that are still in the same year
-        IF date_part('year', occurrence) = date_part('year', after) THEN
+        IF date_part('year', occurrence) = date_part('year', after_ts) THEN
           RETURN NEXT occurrence;
           result_count := result_count + 1;
           EXIT WHEN max_results IS NOT NULL AND result_count >= max_results;
@@ -1390,77 +1367,72 @@ $$ LANGUAGE plpgsql IMMUTABLE;  -- STRICT removed to allow NULL max_results
 -- Return another year's worth of events
 ------------------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION yearly_set(
-  TIMESTAMP WITH TIME ZONE,
-  rrule.rrule_parts,
+  after_ts TIMESTAMP WITH TIME ZONE,
+  rule rrule.rrule_parts,
   max_results INT DEFAULT NULL  -- NULL = unlimited, otherwise stop after N results
 ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
 DECLARE
-  after ALIAS FOR $1;
-  rrule ALIAS FOR $2;
-  max_results ALIAS FOR $3;
   current_base TIMESTAMP WITH TIME ZONE;
   curse REFCURSOR;
-  curser REFCURSOR;
-  i INT;
 BEGIN
   -- Maintain STRICT semantics for required parameters
-  IF after IS NULL OR rrule IS NULL THEN
+  IF after_ts IS NULL OR rule IS NULL THEN
     RETURN;
   END IF;
 
   -- Validate: BYMONTH + BYYEARDAY is contradictory and not supported
   -- Example invalid case: "February (month 2) on day 100 of year" is impossible
-  IF rrule.bymonth IS NOT NULL AND rrule.byyearday IS NOT NULL THEN
+  IF rule.bymonth IS NOT NULL AND rule.byyearday IS NOT NULL THEN
     RAISE EXCEPTION 'Invalid RRULE: FREQ=YEARLY with both BYMONTH and BYYEARDAY is not supported. BYMONTH specifies a specific month, while BYYEARDAY specifies a day of the year - these constraints are contradictory. Use either BYMONTH or BYYEARDAY, not both. Example valid patterns: FREQ=YEARLY;BYMONTH=2 or FREQ=YEARLY;BYYEARDAY=100';
   END IF;
 
   -- Determine which generator to use, with BYWEEKNO as filter or generator
-  IF rrule.bymonth IS NOT NULL THEN
+  IF rule.bymonth IS NOT NULL THEN
     -- BYMONTH is the primary generator
     -- BYWEEKNO acts as a filter on the generated dates
-    OPEN curse SCROLL FOR SELECT r FROM rrule.rrule_yearly_bymonth_set(after, rrule, max_results) r;
-    FOR current_base IN SELECT d FROM rrule.rrule_bysetpos_filter(curse, rrule.bysetpos) d LOOP
-      current_base := date_trunc('day', current_base) + (after::time)::interval;
+    OPEN curse SCROLL FOR SELECT r FROM rrule.rrule_yearly_bymonth_set(after_ts, rule, max_results) r;
+    FOR current_base IN SELECT d FROM rrule.rrule_bysetpos_filter(curse, rule.bysetpos) d LOOP
+      current_base := date_trunc('day', current_base) + (after_ts::time)::interval;
       -- Apply BYWEEKNO filter if specified
-      IF rrule.byweekno IS NOT NULL THEN
-        IF NOT rrule.get_week_number(current_base, rrule.wkst) = ANY (rrule.byweekno) THEN
+      IF rule.byweekno IS NOT NULL THEN
+        IF NOT rrule.get_week_number(current_base, rule.wkst) = ANY (rule.byweekno) THEN
           CONTINUE;  -- Skip this date, wrong week number
         END IF;
       END IF;
       RETURN NEXT current_base;
     END LOOP;
 
-  ELSIF rrule.byyearday IS NOT NULL THEN
+  ELSIF rule.byyearday IS NOT NULL THEN
     -- BYYEARDAY is the primary generator
     -- BYWEEKNO acts as a filter on the generated dates
-    OPEN curse SCROLL FOR SELECT r FROM rrule.rrule_yearly_byyearday_set(after, rrule, max_results) r ORDER BY 1;
-    IF rrule.byweekno IS NOT NULL THEN
+    OPEN curse SCROLL FOR SELECT r FROM rrule.rrule_yearly_byyearday_set(after_ts, rule, max_results) r ORDER BY 1;
+    IF rule.byweekno IS NOT NULL THEN
       -- Filter results by week number
-      FOR current_base IN SELECT d FROM rrule.rrule_bysetpos_filter(curse, rrule.bysetpos) d LOOP
-        IF rrule.get_week_number(current_base, rrule.wkst) = ANY (rrule.byweekno) THEN
+      FOR current_base IN SELECT d FROM rrule.rrule_bysetpos_filter(curse, rule.bysetpos) d LOOP
+        IF rrule.get_week_number(current_base, rule.wkst) = ANY (rule.byweekno) THEN
           RETURN NEXT current_base;
         END IF;
       END LOOP;
     ELSE
       -- No BYWEEKNO filter needed
-      RETURN QUERY SELECT d FROM rrule.rrule_bysetpos_filter(curse, rrule.bysetpos) d;
+      RETURN QUERY SELECT d FROM rrule.rrule_bysetpos_filter(curse, rule.bysetpos) d;
     END IF;
 
-  ELSIF rrule.byweekno IS NOT NULL THEN
+  ELSIF rule.byweekno IS NOT NULL THEN
     -- BYWEEKNO is the primary generator (no BYMONTH or BYYEARDAY)
     -- Example: FREQ=YEARLY;BYWEEKNO=1,10 = All dates in weeks 1 and 10
     -- Example: FREQ=YEARLY;BYWEEKNO=1;BYDAY=MO = All Mondays in week 1
-    OPEN curse SCROLL FOR SELECT r FROM rrule.rrule_yearly_byweekno_set(after, rrule, max_results) r ORDER BY 1;
-    RETURN QUERY SELECT d FROM rrule.rrule_bysetpos_filter(curse, rrule.bysetpos) d;
+    OPEN curse SCROLL FOR SELECT r FROM rrule.rrule_yearly_byweekno_set(after_ts, rule, max_results) r ORDER BY 1;
+    RETURN QUERY SELECT d FROM rrule.rrule_bysetpos_filter(curse, rule.bysetpos) d;
 
   ELSE
     -- No BYMONTH, BYYEARDAY, or BYWEEKNO - return anniversary of dtstart
     -- Example: FREQ=YEARLY with dtstart=2025-03-15 = March 15 every year
     -- Apply BYDAY filter if specified
-    IF rrule.byday IS NOT NULL AND NOT substring(to_char(after, 'DY') for 2 from 1) = ANY (rrule.byday) THEN
+    IF rule.byday IS NOT NULL AND NOT substring(to_char(after_ts, 'DY') for 2 from 1) = ANY (rule.byday) THEN
       RETURN;
     END IF;
-    RETURN NEXT after;
+    RETURN NEXT after_ts;
   END IF;
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;  -- STRICT removed to allow NULL max_results
@@ -1506,56 +1478,56 @@ $$ LANGUAGE plpgsql IMMUTABLE;  -- STRICT removed to allow NULL max_results
 ------------------------------------------------------------------------------------------------------
 -- Combine all of that into something which we can use to generate a series from an arbitrary DTSTART/RRULE
 ------------------------------------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION rrule_event_instances_range( TIMESTAMP WITH TIME ZONE, TEXT, TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE, INT )
-                                         RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
+CREATE OR REPLACE FUNCTION rrule_event_instances_range(
+  basedate TIMESTAMP WITH TIME ZONE,
+  repeatrule TEXT,
+  mindate TIMESTAMP WITH TIME ZONE,
+  maxdate TIMESTAMP WITH TIME ZONE,
+  max_count INT
+) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
 DECLARE
-  basedate ALIAS FOR $1;
-  repeatrule ALIAS FOR $2;
-  mindate ALIAS FOR $3;
-  maxdate ALIAS FOR $4;
-  max_count ALIAS FOR $5;
   loopmax INT;
   loopcount INT;
   base_day TIMESTAMP WITH TIME ZONE;
   current_base TIMESTAMP WITH TIME ZONE;
   current TIMESTAMP WITH TIME ZONE;
-  rrule rrule.rrule_parts%ROWTYPE;
+  rule rrule.rrule_parts%ROWTYPE;
 BEGIN
   loopcount := 0;
 
-  SELECT * INTO rrule FROM rrule.parse_rrule_parts( basedate, repeatrule );
+  SELECT * INTO rule FROM rrule.parse_rrule_parts(basedate, repeatrule);
 
   -- Security: Calculate safe iteration limit accounting for sparse BYxxx filters
   -- (e.g., FREQ=DAILY;BYDAY=MO only matches 1/7 days, requiring 20x headroom)
   -- See calculate_safe_iteration_limit() for detailed security rationale.
-  loopmax := rrule.calculate_safe_iteration_limit(rrule.freq, rrule.count, max_count);
+  loopmax := rrule.calculate_safe_iteration_limit(rule.freq, rule.count, max_count);
 
   current_base := basedate;
-  base_day := date_trunc('day',basedate);
+  base_day := date_trunc('day', basedate);
   WHILE loopcount < loopmax AND current_base < maxdate LOOP
-    IF rrule.freq = 'DAILY' THEN
-      FOR current IN SELECT d FROM rrule.daily_set(current_base, rrule,
-                                                     CASE WHEN rrule.bysetpos IS NULL
+    IF rule.freq = 'DAILY' THEN
+      FOR current IN SELECT d FROM rrule.daily_set(current_base, rule,
+                                                     CASE WHEN rule.bysetpos IS NULL
                                                           THEN loopmax - loopcount
                                                           ELSE NULL END) d WHERE d >= base_day LOOP
-          EXIT WHEN rrule.until IS NOT NULL AND current > rrule.until;
+          EXIT WHEN rule.until IS NOT NULL AND current > rule.until;
           IF current >= mindate THEN
             RETURN NEXT current;
           END IF;
           loopcount := loopcount + 1;
           EXIT WHEN loopcount >= loopmax;
       END LOOP;
-      current_base := current_base + make_interval(days => rrule.interval);
-    ELSIF rrule.freq = 'WEEKLY' THEN
-      FOR current IN SELECT w FROM rrule.weekly_set(current_base, rrule,
-                                                      CASE WHEN rrule.bysetpos IS NULL
+      current_base := current_base + make_interval(days => rule.interval);
+    ELSIF rule.freq = 'WEEKLY' THEN
+      FOR current IN SELECT w FROM rrule.weekly_set(current_base, rule,
+                                                      CASE WHEN rule.bysetpos IS NULL
                                                            THEN loopmax - loopcount
                                                            ELSE NULL END) w WHERE w >= base_day LOOP
-        IF rrule.test_byyearday_rule(current,rrule.byyearday)
-               AND rrule.test_bymonthday_rule(current,rrule.bymonthday)
-               AND rrule.test_bymonth_rule(current,rrule.bymonth)
+        IF rrule.test_byyearday_rule(current, rule.byyearday)
+               AND rrule.test_bymonthday_rule(current, rule.bymonthday)
+               AND rrule.test_bymonth_rule(current, rule.bymonth)
         THEN
-          EXIT WHEN rrule.until IS NOT NULL AND current > rrule.until;
+          EXIT WHEN rule.until IS NOT NULL AND current > rule.until;
           IF current >= mindate THEN
             RETURN NEXT current;
           END IF;
@@ -1563,33 +1535,33 @@ BEGIN
           EXIT WHEN loopcount >= loopmax;
         END IF;
       END LOOP;
-      current_base := current_base + make_interval(weeks => rrule.interval);
-    ELSIF rrule.freq = 'MONTHLY' THEN
-      FOR current IN SELECT m FROM rrule.monthly_set(current_base, rrule,
-                                                       CASE WHEN rrule.bysetpos IS NULL
+      current_base := current_base + make_interval(weeks => rule.interval);
+    ELSIF rule.freq = 'MONTHLY' THEN
+      FOR current IN SELECT m FROM rrule.monthly_set(current_base, rule,
+                                                       CASE WHEN rule.bysetpos IS NULL
                                                             THEN loopmax - loopcount
                                                             ELSE NULL END) m WHERE m >= base_day LOOP
-          EXIT WHEN rrule.until IS NOT NULL AND current > rrule.until;
+          EXIT WHEN rule.until IS NOT NULL AND current > rule.until;
           IF current >= mindate THEN
             RETURN NEXT current;
           END IF;
           loopcount := loopcount + 1;
           EXIT WHEN loopcount >= loopmax;
       END LOOP;
-      current_base := current_base + make_interval(months => rrule.interval);
-    ELSIF rrule.freq = 'YEARLY' THEN
-      FOR current IN SELECT y FROM rrule.yearly_set(current_base, rrule,
-                                                      CASE WHEN rrule.bysetpos IS NULL
+      current_base := current_base + make_interval(months => rule.interval);
+    ELSIF rule.freq = 'YEARLY' THEN
+      FOR current IN SELECT y FROM rrule.yearly_set(current_base, rule,
+                                                      CASE WHEN rule.bysetpos IS NULL
                                                            THEN loopmax - loopcount
                                                            ELSE NULL END) y WHERE y >= base_day LOOP
-        EXIT WHEN rrule.until IS NOT NULL AND current > rrule.until;
+        EXIT WHEN rule.until IS NOT NULL AND current > rule.until;
         IF current >= mindate THEN
           RETURN NEXT current;
         END IF;
         loopcount := loopcount + 1;
         EXIT WHEN loopcount >= loopmax;
       END LOOP;
-      current_base := current_base + make_interval(years => rrule.interval);
+      current_base := current_base + make_interval(years => rule.interval);
 
     -- ⚠️ SUB-DAY FREQUENCIES NOT AVAILABLE IN STANDARD INSTALLATION
     --
@@ -1607,13 +1579,13 @@ BEGIN
     --
     ELSE
       -- Provide helpful error message for sub-day frequencies
-      IF rrule.freq IN ('HOURLY', 'MINUTELY', 'SECONDLY') THEN
-        RAISE EXCEPTION 'Frequency "%" is not supported in standard installation. Sub-day frequencies (HOURLY, MINUTELY, SECONDLY) are disabled by default for security. To enable them, use: psql -d your_database -f src/install_with_subday.sql. See INCLUDING_SUBDAY_OPERATIONS.md for security considerations.', rrule.freq;
+      IF rule.freq IN ('HOURLY', 'MINUTELY', 'SECONDLY') THEN
+        RAISE EXCEPTION 'Frequency "%" is not supported in standard installation. Sub-day frequencies (HOURLY, MINUTELY, SECONDLY) are disabled by default for security. To enable them, use: psql -d your_database -f src/install_with_subday.sql. See INCLUDING_SUBDAY_OPERATIONS.md for security considerations.', rule.freq;
       ELSE
-        RAISE EXCEPTION 'Unsupported frequency: %. Valid values are: DAILY, WEEKLY, MONTHLY, YEARLY. For sub-day frequencies, see INCLUDING_SUBDAY_OPERATIONS.md', rrule.freq;
+        RAISE EXCEPTION 'Unsupported frequency: %. Valid values are: DAILY, WEEKLY, MONTHLY, YEARLY. For sub-day frequencies, see INCLUDING_SUBDAY_OPERATIONS.md', rule.freq;
       END IF;
     END IF;
-    EXIT WHEN rrule.until IS NOT NULL AND current > rrule.until;
+    EXIT WHEN rule.until IS NOT NULL AND current > rule.until;
   END LOOP;
 END;
 $$ LANGUAGE plpgsql IMMUTABLE STRICT;
@@ -1701,11 +1673,6 @@ BEGIN
             maxdate_utc,
             max_count
         ) d;
-
-EXCEPTION
-    WHEN OTHERS THEN
-        -- Re-raise exception with context
-        RAISE;
 END;
 $$ LANGUAGE plpgsql STABLE;
 
@@ -1753,11 +1720,6 @@ BEGIN
             end_utc,
             max_count
         ) d;
-
-EXCEPTION
-    WHEN OTHERS THEN
-        -- Re-raise exception with context
-        RAISE;
 END;
 $$ LANGUAGE plpgsql STABLE;
 
@@ -1786,11 +1748,6 @@ BEGIN
     LIMIT 1;
 
     RETURN next_occurrence;
-
-EXCEPTION
-    WHEN OTHERS THEN
-        -- Re-raise exception with context
-        RAISE;
 END;
 $$ LANGUAGE plpgsql STABLE;
 
@@ -1819,11 +1776,6 @@ BEGIN
     LIMIT 1;
 
     RETURN previous_occurrence;
-
-EXCEPTION
-    WHEN OTHERS THEN
-        -- Re-raise exception with context
-        RAISE;
 END;
 $$ LANGUAGE plpgsql STABLE;
 

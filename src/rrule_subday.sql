@@ -71,41 +71,39 @@ SET search_path = rrule, public;
 -- ⚠️  Recommended limits: COUNT <= 1000, UNTIL <= 7 days from dtstart
 -- ⚠️  Use case: "Every 3 hours" (FREQ=HOURLY;INTERVAL=3;COUNT=8)
 ------------------------------------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION hourly_set( TIMESTAMP WITH TIME ZONE, rrule.rrule_parts ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
-DECLARE
-  after ALIAS FOR $1;
-  rrule ALIAS FOR $2;
+CREATE OR REPLACE FUNCTION hourly_set(
+  after_ts TIMESTAMP WITH TIME ZONE,
+  rule rrule.rrule_parts
+) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
 BEGIN
-
   -- Apply day-level filters first
-  IF rrule.bymonth IS NOT NULL AND NOT date_part('month',after) = ANY ( rrule.bymonth ) THEN
+  IF rule.bymonth IS NOT NULL AND NOT date_part('month', after_ts) = ANY (rule.bymonth) THEN
     RETURN;
   END IF;
 
-  IF rrule.bymonthday IS NOT NULL AND NOT date_part('day',after) = ANY ( rrule.bymonthday ) THEN
+  IF rule.bymonthday IS NOT NULL AND NOT date_part('day', after_ts) = ANY (rule.bymonthday) THEN
     RETURN;
   END IF;
 
-  IF rrule.byday IS NOT NULL AND NOT substring(to_char(after, 'DY') for 2 from 1) = ANY ( rrule.byday ) THEN
+  IF rule.byday IS NOT NULL AND NOT substring(to_char(after_ts, 'DY') for 2 from 1) = ANY (rule.byday) THEN
     RETURN;
   END IF;
 
   -- Apply hour filter
-  IF rrule.byhour IS NOT NULL AND NOT date_part('hour',after) = ANY ( rrule.byhour ) THEN
+  IF rule.byhour IS NOT NULL AND NOT date_part('hour', after_ts) = ANY (rule.byhour) THEN
     RETURN;
   END IF;
 
   -- Apply minute/second filters if specified
-  IF rrule.byminute IS NOT NULL AND NOT date_part('minute',after) = ANY ( rrule.byminute ) THEN
+  IF rule.byminute IS NOT NULL AND NOT date_part('minute', after_ts) = ANY (rule.byminute) THEN
     RETURN;
   END IF;
 
-  IF rrule.bysecond IS NOT NULL AND NOT date_part('second',after)::INT = ANY ( rrule.bysecond ) THEN
+  IF rule.bysecond IS NOT NULL AND NOT date_part('second', after_ts)::INT = ANY (rule.bysecond) THEN
     RETURN;
   END IF;
 
-  RETURN NEXT after;
-
+  RETURN NEXT after_ts;
 END;
 $$ LANGUAGE plpgsql IMMUTABLE STRICT;
 
@@ -117,39 +115,37 @@ $$ LANGUAGE plpgsql IMMUTABLE STRICT;
 -- ⚠️  Recommended limits: COUNT <= 1000, UNTIL <= 24 hours from dtstart
 -- ⚠️  Use case: "Every 15 minutes" (FREQ=MINUTELY;INTERVAL=15;COUNT=96)
 ------------------------------------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION minutely_set( TIMESTAMP WITH TIME ZONE, rrule.rrule_parts ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
-DECLARE
-  after ALIAS FOR $1;
-  rrule ALIAS FOR $2;
+CREATE OR REPLACE FUNCTION minutely_set(
+  after_ts TIMESTAMP WITH TIME ZONE,
+  rule rrule.rrule_parts
+) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
 BEGIN
-
   -- Apply all filters
-  IF rrule.bymonth IS NOT NULL AND NOT date_part('month',after) = ANY ( rrule.bymonth ) THEN
+  IF rule.bymonth IS NOT NULL AND NOT date_part('month', after_ts) = ANY (rule.bymonth) THEN
     RETURN;
   END IF;
 
-  IF rrule.bymonthday IS NOT NULL AND NOT date_part('day',after) = ANY ( rrule.bymonthday ) THEN
+  IF rule.bymonthday IS NOT NULL AND NOT date_part('day', after_ts) = ANY (rule.bymonthday) THEN
     RETURN;
   END IF;
 
-  IF rrule.byday IS NOT NULL AND NOT substring(to_char(after, 'DY') for 2 from 1) = ANY ( rrule.byday ) THEN
+  IF rule.byday IS NOT NULL AND NOT substring(to_char(after_ts, 'DY') for 2 from 1) = ANY (rule.byday) THEN
     RETURN;
   END IF;
 
-  IF rrule.byhour IS NOT NULL AND NOT date_part('hour',after) = ANY ( rrule.byhour ) THEN
+  IF rule.byhour IS NOT NULL AND NOT date_part('hour', after_ts) = ANY (rule.byhour) THEN
     RETURN;
   END IF;
 
-  IF rrule.byminute IS NOT NULL AND NOT date_part('minute',after) = ANY ( rrule.byminute ) THEN
+  IF rule.byminute IS NOT NULL AND NOT date_part('minute', after_ts) = ANY (rule.byminute) THEN
     RETURN;
   END IF;
 
-  IF rrule.bysecond IS NOT NULL AND NOT date_part('second',after)::INT = ANY ( rrule.bysecond ) THEN
+  IF rule.bysecond IS NOT NULL AND NOT date_part('second', after_ts)::INT = ANY (rule.bysecond) THEN
     RETURN;
   END IF;
 
-  RETURN NEXT after;
-
+  RETURN NEXT after_ts;
 END;
 $$ LANGUAGE plpgsql IMMUTABLE STRICT;
 
@@ -162,39 +158,37 @@ $$ LANGUAGE plpgsql IMMUTABLE STRICT;
 -- ⚠️  Recommended limits: COUNT <= 1000, UNTIL <= 1 hour from dtstart
 -- ⚠️  Use case: "Every 30 seconds for 5 minutes" (FREQ=SECONDLY;INTERVAL=30;COUNT=10)
 ------------------------------------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION secondly_set( TIMESTAMP WITH TIME ZONE, rrule.rrule_parts ) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
-DECLARE
-  after ALIAS FOR $1;
-  rrule ALIAS FOR $2;
+CREATE OR REPLACE FUNCTION secondly_set(
+  after_ts TIMESTAMP WITH TIME ZONE,
+  rule rrule.rrule_parts
+) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
 BEGIN
-
   -- Apply all filters
-  IF rrule.bymonth IS NOT NULL AND NOT date_part('month',after) = ANY ( rrule.bymonth ) THEN
+  IF rule.bymonth IS NOT NULL AND NOT date_part('month', after_ts) = ANY (rule.bymonth) THEN
     RETURN;
   END IF;
 
-  IF rrule.bymonthday IS NOT NULL AND NOT date_part('day',after) = ANY ( rrule.bymonthday ) THEN
+  IF rule.bymonthday IS NOT NULL AND NOT date_part('day', after_ts) = ANY (rule.bymonthday) THEN
     RETURN;
   END IF;
 
-  IF rrule.byday IS NOT NULL AND NOT substring(to_char(after, 'DY') for 2 from 1) = ANY ( rrule.byday ) THEN
+  IF rule.byday IS NOT NULL AND NOT substring(to_char(after_ts, 'DY') for 2 from 1) = ANY (rule.byday) THEN
     RETURN;
   END IF;
 
-  IF rrule.byhour IS NOT NULL AND NOT date_part('hour',after) = ANY ( rrule.byhour ) THEN
+  IF rule.byhour IS NOT NULL AND NOT date_part('hour', after_ts) = ANY (rule.byhour) THEN
     RETURN;
   END IF;
 
-  IF rrule.byminute IS NOT NULL AND NOT date_part('minute',after) = ANY ( rrule.byminute ) THEN
+  IF rule.byminute IS NOT NULL AND NOT date_part('minute', after_ts) = ANY (rule.byminute) THEN
     RETURN;
   END IF;
 
-  IF rrule.bysecond IS NOT NULL AND NOT date_part('second',after)::INT = ANY ( rrule.bysecond ) THEN
+  IF rule.bysecond IS NOT NULL AND NOT date_part('second', after_ts)::INT = ANY (rule.bysecond) THEN
     RETURN;
   END IF;
 
-  RETURN NEXT after;
-
+  RETURN NEXT after_ts;
 END;
 $$ LANGUAGE plpgsql IMMUTABLE STRICT;
 
@@ -205,60 +199,59 @@ $$ LANGUAGE plpgsql IMMUTABLE STRICT;
 -- Also provides the actual implementations of hourly_set(), minutely_set(), and secondly_set()
 -- which are not defined in the standard rrule.sql installation.
 ------------------------------------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION rrule_event_instances_range( TIMESTAMP WITH TIME ZONE, TEXT, TIMESTAMP WITH TIME ZONE, TIMESTAMP WITH TIME ZONE, INT )
-                                         RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
+CREATE OR REPLACE FUNCTION rrule_event_instances_range(
+  basedate TIMESTAMP WITH TIME ZONE,
+  repeatrule TEXT,
+  mindate TIMESTAMP WITH TIME ZONE,
+  maxdate TIMESTAMP WITH TIME ZONE,
+  max_count INT
+) RETURNS SETOF TIMESTAMP WITH TIME ZONE AS $$
 DECLARE
-  basedate ALIAS FOR $1;
-  repeatrule ALIAS FOR $2;
-  mindate ALIAS FOR $3;
-  maxdate ALIAS FOR $4;
-  max_count ALIAS FOR $5;
   loopmax INT;
   loopcount INT;
   base_day TIMESTAMP WITH TIME ZONE;
   current_base TIMESTAMP WITH TIME ZONE;
   current TIMESTAMP WITH TIME ZONE;
-  rrule rrule.rrule_parts;
+  rule rrule.rrule_parts;
 BEGIN
+  rule := rrule.parse_rrule_parts(basedate, repeatrule);
 
-  rrule := rrule.parse_rrule_parts(basedate, repeatrule);
-
-  -- Use the SMALLEST of max_count and rrule.count to respect COUNT parameter
+  -- Use the SMALLEST of max_count and rule.count to respect COUNT parameter
   -- max_count comes from wrapper (e.g., all() uses 1000 as safety limit)
-  -- rrule.count comes from the RRULE string itself (e.g., COUNT=5)
-  IF rrule.count IS NOT NULL AND max_count IS NOT NULL THEN
-    loopmax := LEAST(rrule.count, max_count);
+  -- rule.count comes from the RRULE string itself (e.g., COUNT=5)
+  IF rule.count IS NOT NULL AND max_count IS NOT NULL THEN
+    loopmax := LEAST(rule.count, max_count);
   ELSE
-    loopmax := COALESCE(rrule.count, max_count, 732);  -- Default: 2 years daily
+    loopmax := COALESCE(rule.count, max_count, 732);  -- Default: 2 years daily
   END IF;
   loopcount := 0;
 
-  IF rrule.freq IS NULL THEN
+  IF rule.freq IS NULL THEN
     RAISE EXCEPTION 'Invalid RRULE: FREQ parameter is required';
   END IF;
 
   current_base := basedate;
-  base_day := date_trunc('day',basedate);
+  base_day := date_trunc('day', basedate);
 
   WHILE loopcount < loopmax AND current_base < maxdate LOOP
-    IF rrule.freq = 'DAILY' THEN
-      FOR current IN SELECT d FROM rrule.daily_set(current_base, rrule, loopmax - loopcount) d WHERE d >= base_day LOOP
-        EXIT WHEN rrule.until IS NOT NULL AND current > rrule.until;
+    IF rule.freq = 'DAILY' THEN
+      FOR current IN SELECT d FROM rrule.daily_set(current_base, rule, loopmax - loopcount) d WHERE d >= base_day LOOP
+        EXIT WHEN rule.until IS NOT NULL AND current > rule.until;
         IF current >= mindate THEN
           RETURN NEXT current;
         END IF;
         loopcount := loopcount + 1;
         EXIT WHEN loopcount >= loopmax;
       END LOOP;
-      current_base := current_base + make_interval(days => rrule.interval);
+      current_base := current_base + make_interval(days => rule.interval);
 
-    ELSIF rrule.freq = 'WEEKLY' THEN
-      FOR current IN SELECT w FROM rrule.weekly_set(current_base, rrule, loopmax - loopcount) w WHERE w >= base_day LOOP
-        IF rrule.test_byyearday_rule(current,rrule.byyearday)
-               AND rrule.test_bymonthday_rule(current,rrule.bymonthday)
-               AND rrule.test_bymonth_rule(current,rrule.bymonth)
+    ELSIF rule.freq = 'WEEKLY' THEN
+      FOR current IN SELECT w FROM rrule.weekly_set(current_base, rule, loopmax - loopcount) w WHERE w >= base_day LOOP
+        IF rrule.test_byyearday_rule(current, rule.byyearday)
+               AND rrule.test_bymonthday_rule(current, rule.bymonthday)
+               AND rrule.test_bymonth_rule(current, rule.bymonth)
         THEN
-          EXIT WHEN rrule.until IS NOT NULL AND current > rrule.until;
+          EXIT WHEN rule.until IS NOT NULL AND current > rule.until;
           IF current >= mindate THEN
             RETURN NEXT current;
           END IF;
@@ -266,71 +259,71 @@ BEGIN
           EXIT WHEN loopcount >= loopmax;
         END IF;
       END LOOP;
-      current_base := current_base + make_interval(weeks => rrule.interval);
+      current_base := current_base + make_interval(weeks => rule.interval);
 
-    ELSIF rrule.freq = 'MONTHLY' THEN
-      FOR current IN SELECT m FROM rrule.monthly_set(current_base, rrule, loopmax - loopcount) m WHERE m >= base_day LOOP
-        EXIT WHEN rrule.until IS NOT NULL AND current > rrule.until;
+    ELSIF rule.freq = 'MONTHLY' THEN
+      FOR current IN SELECT m FROM rrule.monthly_set(current_base, rule, loopmax - loopcount) m WHERE m >= base_day LOOP
+        EXIT WHEN rule.until IS NOT NULL AND current > rule.until;
         IF current >= mindate THEN
           RETURN NEXT current;
         END IF;
         loopcount := loopcount + 1;
         EXIT WHEN loopcount >= loopmax;
       END LOOP;
-      current_base := current_base + make_interval(months => rrule.interval);
+      current_base := current_base + make_interval(months => rule.interval);
 
-    ELSIF rrule.freq = 'YEARLY' THEN
-      FOR current IN SELECT y FROM rrule.yearly_set(current_base, rrule, loopmax - loopcount) y WHERE y >= base_day LOOP
-        EXIT WHEN rrule.until IS NOT NULL AND current > rrule.until;
+    ELSIF rule.freq = 'YEARLY' THEN
+      FOR current IN SELECT y FROM rrule.yearly_set(current_base, rule, loopmax - loopcount) y WHERE y >= base_day LOOP
+        EXIT WHEN rule.until IS NOT NULL AND current > rule.until;
         IF current >= mindate THEN
           RETURN NEXT current;
         END IF;
         loopcount := loopcount + 1;
         EXIT WHEN loopcount >= loopmax;
       END LOOP;
-      current_base := current_base + make_interval(years => rrule.interval);
+      current_base := current_base + make_interval(years => rule.interval);
 
     -- ⚠️  SUB-DAY FREQUENCIES ENABLED ⚠️
     -- These are active in this file. See header comments for security implications.
 
-    ELSIF rrule.freq = 'HOURLY' THEN
-      FOR current IN SELECT h FROM rrule.hourly_set(current_base,rrule) h WHERE h >= base_day LOOP
-        EXIT WHEN rrule.until IS NOT NULL AND current > rrule.until;
+    ELSIF rule.freq = 'HOURLY' THEN
+      FOR current IN SELECT h FROM rrule.hourly_set(current_base, rule) h WHERE h >= base_day LOOP
+        EXIT WHEN rule.until IS NOT NULL AND current > rule.until;
         IF current >= mindate THEN
           RETURN NEXT current;
         END IF;
         loopcount := loopcount + 1;
         EXIT WHEN loopcount >= loopmax;
       END LOOP;
-      current_base := current_base + make_interval(hours => rrule.interval);
+      current_base := current_base + make_interval(hours => rule.interval);
 
-    ELSIF rrule.freq = 'MINUTELY' THEN
-      FOR current IN SELECT m FROM rrule.minutely_set(current_base,rrule) m WHERE m >= base_day LOOP
-        EXIT WHEN rrule.until IS NOT NULL AND current > rrule.until;
+    ELSIF rule.freq = 'MINUTELY' THEN
+      FOR current IN SELECT m FROM rrule.minutely_set(current_base, rule) m WHERE m >= base_day LOOP
+        EXIT WHEN rule.until IS NOT NULL AND current > rule.until;
         IF current >= mindate THEN
           RETURN NEXT current;
         END IF;
         loopcount := loopcount + 1;
         EXIT WHEN loopcount >= loopmax;
       END LOOP;
-      current_base := current_base + make_interval(mins => rrule.interval);
+      current_base := current_base + make_interval(mins => rule.interval);
 
-    ELSIF rrule.freq = 'SECONDLY' THEN
-      FOR current IN SELECT s FROM rrule.secondly_set(current_base,rrule) s WHERE s >= base_day LOOP
-        EXIT WHEN rrule.until IS NOT NULL AND current > rrule.until;
+    ELSIF rule.freq = 'SECONDLY' THEN
+      FOR current IN SELECT s FROM rrule.secondly_set(current_base, rule) s WHERE s >= base_day LOOP
+        EXIT WHEN rule.until IS NOT NULL AND current > rule.until;
         IF current >= mindate THEN
           RETURN NEXT current;
         END IF;
         loopcount := loopcount + 1;
         EXIT WHEN loopcount >= loopmax;
       END LOOP;
-      current_base := current_base + make_interval(secs => rrule.interval);
+      current_base := current_base + make_interval(secs => rule.interval);
 
     ELSE
-      RAISE NOTICE 'A frequency of "%" is not handled', rrule.freq;
+      RAISE NOTICE 'A frequency of "%" is not handled', rule.freq;
       RETURN;
     END IF;
-    EXIT WHEN rrule.until IS NOT NULL AND current > rrule.until;
+    EXIT WHEN rule.until IS NOT NULL AND current > rule.until;
   END LOOP;
 END;
 $$ LANGUAGE plpgsql IMMUTABLE STRICT;
