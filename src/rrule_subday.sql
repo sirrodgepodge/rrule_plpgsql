@@ -63,7 +63,9 @@
  * @security CRITICAL - Review security implications before use
  */
 
-SET search_path = rrule, public;
+-- Using SET LOCAL so the change is scoped to the current transaction only
+-- and doesn't leak to subsequent statements on the same connection.
+SET LOCAL search_path = rrule, public;
 
 ------------------------------------------------------------------------------------------------------
 -- HOURLY frequency handler

@@ -38,8 +38,11 @@
 *
 */
 
--- Set search path to rrule schema so all functions are created there
-SET search_path = rrule, public;
+-- Set search path to rrule schema so all functions are created there.
+-- Using SET LOCAL so the change is scoped to the current transaction only
+-- and doesn't leak to subsequent statements on the same connection
+-- (e.g., other migrations in a TypeORM/Knex migration runner).
+SET LOCAL search_path = rrule, public;
 
 -- Create a composite type for the parts of the RRULE.
 -- Note: This file is designed to be loaded via install.sql which drops/recreates
