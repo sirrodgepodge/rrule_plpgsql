@@ -17,3 +17,6 @@ Thumbs.db
 # Test output
 tests/output/
 tests/*.log
+
+# npm auth
+.npmrc
